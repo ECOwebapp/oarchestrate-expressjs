@@ -45,6 +45,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// Use verifyToken for actions that requires user authentication
+// Express only uses Anon Key so it requires session_token to conduct transactions
+
 app.use('/auth', authRoute)
 app.use('/profile', verifyToken, profileRoute)
 app.use('/ppa', verifyToken, projectRoute)
