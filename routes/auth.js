@@ -97,4 +97,27 @@ router.get('/me', verifyToken, async (req, res) => {
     }
 });
 
+
+// Requires testing when internet connection returns
+// >> Hexer <<
+router.post('/pass', verifyToken, async (req, res) => {
+    const { payload, status } = req.body
+    try {
+        if (status === 'verify') {
+            payload.email = req.user.email
+            const { error } = await req.supabase.auth.signInWithPassword(payload)
+            if (error) throw new Error(error.message)
+                
+        } else if (status === 'change') {
+            const { error } = await req.supabase.auth.updateUser(payload)
+            if (error) throw new Error(error.message)
+        }   
+        return res.status(204)
+
+    } catch (err) {
+        console.log('Failed to update password: ', err.message)
+        return res.status(500).json({ error: err.message })
+    }
+})
+
 export default router;

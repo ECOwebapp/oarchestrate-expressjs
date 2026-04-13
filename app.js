@@ -4,7 +4,9 @@ import cors from 'cors'
 import { verifyToken } from './middleware/verifyToken.js';
 import authRoute from './routes/auth.js'
 import profileRoute from './routes/profile.js'
+import projectRoute from './routes/projects.js'
 import taskRoute from './routes/task.js'
+import subtaskRoute from './routes/subtasks.js'
 const app = express();
 const PORT = 3000;
 
@@ -45,6 +47,9 @@ app.use(cors({
 
 app.use('/auth', authRoute)
 app.use('/profile', verifyToken, profileRoute)
+app.use('/ppa', verifyToken, projectRoute)
+app.use('/tasks', verifyToken, taskRoute)
+app.use('/subtasks', verifyToken, subtaskRoute)
 
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);

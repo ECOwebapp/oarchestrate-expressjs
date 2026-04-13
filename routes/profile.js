@@ -62,6 +62,8 @@ router.post('/personal', async (req, res) => {
   }
 })
 
+// Requires further testing
+// >> Hexer <<
 router.post('/contact', async (req, res) => {
   const { payload, userId } = req.body;
   const { email_address, phone } = payload;
@@ -74,7 +76,7 @@ router.post('/contact', async (req, res) => {
     if (Array.isArray(email_address)) {
       const emailRows = email_address.map(e => e.trim()).filter(Boolean)
         .map(email => ({ user_id: userId, email_address: email }));
-      
+
       operations.push((async () => {
         await req.supabase.from('email').delete().eq('user_id', userId);
         if (emailRows.length) await req.supabase.from('email').insert(emailRows);
@@ -99,5 +101,43 @@ router.post('/contact', async (req, res) => {
     return res.status(500).json({ error: e.message });
   }
 });
+
+router.post('/work', async (req, res) => {
+  const { payload, status, userId } = req.body
+
+  try {
+    if (status && status === 'delete') {
+      const { data, error, status } = await req.supabase
+        .from('position')
+        .delete()
+        .eq('user_id', userId)
+        .eq('pos_id', payload.position)
+        .select()
+
+      if (error) throw new Error(error.message)
+
+      const userData = await fetchUserData(req.supabase, userId)
+      return res.status(status || 200).json({ userData: userData })
+    } else {
+      const newRows = {
+        user_id: userId,
+        pos_id: payload?.position,
+        unit_id: payload?.unit
+      }
+      const { data, error, status } = await req.supabase
+        .from('position')
+        // Ensure that a constraint has already been added by allowing a user to have multiple, unique positions
+        .upsert(newRows, { onConflict: 'user_id, pos_id' })
+        .select()
+
+      if (error) throw new Error(error.message)
+
+      const userData = await fetchUserData(req.supabase, userId)
+      return res.status(status || 200).json({ userData: userData })
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
+})
 
 export default router
