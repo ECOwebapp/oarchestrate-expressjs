@@ -7,6 +7,7 @@ import profileRoute from './routes/profile.js'
 import projectRoute from './routes/projects.js'
 import taskRoute from './routes/task.js'
 import subtaskRoute from './routes/subtasks.js'
+import outputRoute from './routes/output.js'
 const app = express();
 const PORT = 3000;
 
@@ -53,6 +54,7 @@ app.use('/profile', verifyToken, profileRoute)
 app.use('/ppa', verifyToken, projectRoute)
 app.use('/tasks', verifyToken, taskRoute)
 app.use('/subtasks', verifyToken, subtaskRoute)
+app.use('/output', verifyToken, outputRoute)
 
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);

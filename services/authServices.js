@@ -26,8 +26,8 @@ export const fetchUserData = async (supabase, authUserId) => {
             .maybeSingle(),
 
         supabase
-            .from('position_of_members')
-            .select('pos_id, unit_id, pos_name, unit_name')
+            .from('position')
+            .select('pos_id, unit_id, position_name(pos_name), unit_name(name)')
             .eq('user_id', authUserId),
 
         supabase
@@ -58,7 +58,11 @@ export const fetchUserData = async (supabase, authUserId) => {
 
     return {
         profile: profile || null,
-        positions: posRes.data || [],
+        positions: posRes.data.map(p => ({
+            ...p,
+            pos_name: p.position_name?.pos_name,
+            unit_name: p.unit_name?.name
+        })) || [],
         accountStatus: statusRes.data?.status_id ?? 1,
     };
 
