@@ -1,30 +1,9 @@
 import express from 'express'
-import { subtaskRow } from '../services/taskServices.js'
+import { SUBTASK_SELECT, subtaskRow } from '../services/taskServices.js'
 const router = express.Router()
 
-
-const SUBTASK_SELECT = `
-  id, parent_task_id, parent_subtask_id, assigner, assignee, design,
-  assignee_profile:user_profile!subtask_assignee_fkey (
-    fname, 
-    lname,
-    positions:position(unit_id, pos_id)
-  ),
-  assigner_profile:user_profile!subtask_assigner_fkey (
-    fname, 
-    lname,
-    positions:position(unit_id, pos_id)
-  ),
-  task_profile!subtask_id ( title, description, urgent, revision, task_type,
-    task_type_ref:task_type(task_type) ),
-  task_approval!subtask_id ( unit_head, director, revision_comment, revised_at ),
-  task_duration!subtask_id ( created, deadline ),
-  task_output!subtask_id ( link ),
-  task:task!inner(assignee),
-  design_approval!id(*)`
-
 router.get('/fetch', async (req, res) => {
-    const { parentId } = req.params
+    const { parentId } = req.query
     const userId = req.user.id
 
     try {
