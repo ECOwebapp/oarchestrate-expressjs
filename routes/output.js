@@ -2,29 +2,23 @@ import express from 'express'
 import { resolvePosUnitIds } from '../services/helperServices.js'
 import { _notifySubmission } from '../services/notificationServices.js'
 import { deleteOutputFile } from '../lib/uploadOutput.js'
-import { selectAssigneeAssigner } from '../services/taskServices.js'
+import { selectAssigneeAssigner, fetchTasks, columnResolver } from '../services/taskServices.js'
 const router = express.Router()
 
 // Requires testing
 // >> Hexer <<
 router.post('/insert', async (req, res) => {
     const { taskId, subtaskId, link } = req.body
-
-    let query = { link }
-    let selectQuery = null
-
-    if (subtaskId) query.subtask_id = selectQuery = subtaskId
-    else if (taskId) query.task_id = selectQuery = taskId
-    else throw new Error('Please specify ID of a Task/Subtask')
+    const { idColumn, targetId } = columnResolver(taskId, subtaskId)
 
     try {
         const { data: updated, error: updErr } = await req.supabase
             .from('task_output')
-            .insert(query)
+            .insert({ idColumn: targetId, link: link })
             .select()
         if (updErr) throw new Error(updErr.message)
 
-        const taskRow = await selectAssigneeAssigner(req.supabase, selectQuery)
+        const taskRow = await selectAssigneeAssigner(req.supabase, taskId, subtaskId)
         const assigneeId = taskRow?.assignee || req.user.id
         const assignerId = taskRow?.assigner || req.user.id
         const isSelfAssigned = assigneeId === assignerId
@@ -42,9 +36,12 @@ router.post('/insert', async (req, res) => {
             const { error } = await filter
             if (error) throw new Error(`[Approval Update]: ${error.message}`);
         }
-        await _notifySubmission(taskId, assigneeId, req.user.id, null, isSelfAssigned)
+        await _notifySubmission(req.supabase, taskId, subtaskId, assigneeId, req.user.id, null, isSelfAssigned)
 
-        return res.status(204)
+        if (taskId) {
+            const formattedTasks = await fetchTasks(req.supabase, req.user.id, taskId)
+            return res.status(200).json(formattedTasks)
+        }
     } catch (err) {
         console.log('Error submiting output: ', err.message)
         return res.status(500).json({ error: err.message })
@@ -53,9 +50,7 @@ router.post('/insert', async (req, res) => {
 
 router.post('/update', async (req, res) => {
     const { taskId, subtaskId, newLink } = req.body
-
-    const idColumn = subtaskId ? 'subtask_id' : 'task_id';
-    const targetId = subtaskId || taskId;
+    const { idColumn, targetId } = columnResolver(taskId, subtaskId)
 
     const selectQuery = req.supabase
         .from('task_output')
@@ -101,12 +96,18 @@ router.post('/update', async (req, res) => {
         const isSelfAssigned = assigneeId === assignerId
 
         await _notifySubmission(
-            targetId,
+            req.supabase,
+            taskId,
+            subtaskId,
             assigneeId,
             req.user.id,
             '📝 Submission updated — please review the new file.',
             isSelfAssigned
         )
+        if (taskId) {
+            const formattedTasks = await fetchTasks(req.supabase, req.user.id, taskId)
+            return res.status(200).json(formattedTasks)
+        }
 
     } catch (err) {
         console.log('Error updating output: ', err.message)
@@ -116,9 +117,7 @@ router.post('/update', async (req, res) => {
 
 router.post('/delete', async (req, res) => {
     const { taskId, subtaskId } = req.body
-
-    const idColumn = subtaskId ? 'subtask_id' : 'task_id';
-    const targetId = subtaskId || taskId;
+    const { idColumn, targetId } = columnResolver(taskId, subtaskId)
 
     const selectQuery = req.supabase
         .from('task_output')
@@ -168,6 +167,11 @@ router.post('/delete', async (req, res) => {
                 .update({ revision: false })
                 .eq(idColumn, targetId)
         ])
+
+        if (taskId) {
+            const formattedTasks = await fetchTasks(req.supabase, req.user.id, taskId)
+            return res.status(200).json(formattedTasks)
+        }
 
     } catch (err) {
         return res.status(500).json({ error: err.message })

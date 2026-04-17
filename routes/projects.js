@@ -4,7 +4,6 @@ const router = express.Router();
 router.get('/fetch', async (req, res) => {
     try {
         const { data: projectRes, error: projectErr, status } = await req.supabase.rpc('get_ppa', { user_uuid: req.user.id })
-
         if (projectErr) throw new Error(projectErr)
 
         const projects = (projectRes || []).map(p => ({
@@ -48,7 +47,6 @@ router.post('/insert', async (req, res) => {
 
 router.post('/update', async (req, res) => {
     const { project } = req.body
-
     try {
         const { data: projectRes, error: projectErr, status } = await req.supabase
             .from('ppa')
@@ -67,9 +65,6 @@ router.post('/update', async (req, res) => {
 
 router.post('/delete', async (req, res) => {
     const { id } = req.body
-
-    console.log(req.body)
-
     try {
         const { error: projectErr, status: projectStatus } = await req.supabase
             .from('ppa')

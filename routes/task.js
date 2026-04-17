@@ -1,5 +1,5 @@
 import express from 'express';
-import { selectAssigneeAssigner, TASK_SELECT, taskRow, resolveNames } from '../services/taskServices.js';
+import { selectAssigneeAssigner, resolveNames, fetchTasks } from '../services/taskServices.js';
 import { resolvePosUnitIds } from '../services/helperServices.js';
 import { _notifySubmission } from '../services/notificationServices.js';
 const router = express.Router()
@@ -9,42 +9,7 @@ router.get('/fetch', async (req, res) => {
   const { taskId, parentId } = req.query
 
   try {
-    const { isDirector, isUnitHead } = await resolvePosUnitIds(req.supabase, req.user.id)
-    const activeUnitHeadId = isUnitHead?.unit_id ?? null;
-
-    let query = req.supabase.from('task').select(TASK_SELECT)
-    if (parentId) query = query.eq('parent_ppa_id', Number(parentId));
-    else if (taskId) query = query.eq('id', taskId)
-
-    if (!isDirector) {
-      if (isUnitHead) {
-        // Unit Head: Sees their own tasks + anyone in their unit
-        const { data: unitMembers } = await req.supabase
-          .from("position")
-          .select("user_id")
-          .eq("unit_id", activeUnitHeadId);
-
-        const allowedIds = [
-          ...new Set([
-            req.user.id,
-            ...(unitMembers?.map((m) => m.user_id) || []),
-          ]),
-        ];
-        query = query.in("assignee", allowedIds);
-      } else {
-        // Regular Member: ONLY sees tasks assigned to them
-        query = query.eq("assignee", req.user.id);
-      }
-    }
-
-    const { data: tasks, error } = await query.order("id", {
-      ascending: false,
-    });
-    if (error) throw error;
-
-    const formattedTasks = tasks.map((t) =>
-      taskRow(t, activeUnitHeadId, req.user.id),
-    );
+    const formattedTasks = await fetchTasks(req.supabase, req.user.id, taskId, parentId)
     return res.status(200).json(formattedTasks);
   } catch (e) {
     return res.status(500).json({ error: e.message });
@@ -102,7 +67,7 @@ router.post('/upsert', async (req, res) => {
     const assigneeId = isMember ? req.user.id : (mainTask.assignee || req.user.id);
 
     // 3. Prepare the Base Task Data
-    const taskData = {
+    let taskData = {
       parent_ppa_id: mainTask.parentId,
       assigner: mainTask.assignee ? req.user.id : null,
       assignee: mainTask.assignee ? assigneeId : null,
@@ -120,9 +85,9 @@ router.post('/upsert', async (req, res) => {
     const taskId = taskRow.id;
 
     // 5. Approval Logic (Business Rules)
-    const { unitId } = await resolvePosUnitIds(req.supabase, assigneeId)
+    const { userUnitId } = await resolvePosUnitIds(req.supabase, assigneeId, null)
 
-    const assigneeUnits = unitId?.map(u => u.unit_id) || [];
+    const assigneeUnits = userUnitId?.map(u => u.unit_id) || [];
     const isOfficeMember = assigneeUnits.includes(3); // Assuming 3 is Office
 
     const isSelfAssigned = assigneeId === req.user.id;
@@ -166,10 +131,12 @@ router.post('/upsert', async (req, res) => {
     // In Express, you can trigger this and NOT await it if you want to speed up the response
     if (hasOutput && !isDirectorSelfAssign || mainTask.assignee) {
       // Assuming _notifySubmission is a helper function in your backend
-      await _notifySubmission(taskId, assigneeId, req.user.id, null, isSelfAssigned);
+      await _notifySubmission(req.supabase, taskId, null, assigneeId, req.user.id, null, isSelfAssigned);
     }
 
-    return res.status(200);
+    const formattedTasks = await fetchTasks(req.supabase, req.user.id, null, taskData.parent_ppa_id)
+    taskData = {}
+    return res.status(200).json(formattedTasks);
 
   } catch (err) {
     console.log('Error adding tasks: ', err.message)
@@ -178,7 +145,7 @@ router.post('/upsert', async (req, res) => {
 })
 
 router.post('/delete', async (req, res) => {
-  const { taskIds } = req.body
+  const { taskIds, parentId } = req.body
   try {
     const { isDirector, isUnitHead, isMember } = await resolvePosUnitIds(req.supabase, req.user.id)
 
@@ -227,7 +194,8 @@ router.post('/delete', async (req, res) => {
       del('task', 'id', allowedIds)
     ])
 
-    return res.status(200).json({ result })
+    const formattedTasks = await fetchTasks(req.supabase, req.user.id, null, parentId)
+    return res.status(200).json(formattedTasks)
 
   } catch (err) {
     console.log('Error deleting tasks: ', err.message)
@@ -236,7 +204,7 @@ router.post('/delete', async (req, res) => {
 })
 
 router.post('/approve', async (req, res) => {
-  const { taskId, role } = req.body
+  const { taskId, role, parentId } = req.body
 
   try {
     const { data: task } = await req.supabase
@@ -246,70 +214,31 @@ router.post('/approve', async (req, res) => {
 
     if (!task) throw new Error('Task not found')
 
-    // Handle design task approvals
-    if (task.design) {
-      const designApprovalUpdate = {}
-      let approvalMessage = ''
+    // Handle regular task approvals
+    const col = role === 1 ? 'director' : 'unit_head'
+    const [{ error: updateErr }, { error: revisionErr }] = await Promise.all([
+      req.supabase
+        .from('task_approval')
+        .update({ [col]: true, revision_comment: null, revised_at: null })
+        .eq('task_id', taskId),
 
-      if (role === 'senior_draftsman') {
-        designApprovalUpdate.senior_draftsman = true
-        approvalMessage = '✅ Design approved by Senior Draftsman — forwarded to Engineers.'
-      } else if (role === 'engineers') {
-        designApprovalUpdate.engineers = true
-        approvalMessage = '✅ Design approved by Engineer — forwarded to Unit Head.'
-      } else if (role === 'unit_head') {
-        designApprovalUpdate.unit_head = true
-        approvalMessage = '✅ Design approved by Unit Head — forwarded to Director.'
-      } else if (role === 'director') {
-        designApprovalUpdate.director = true
-        approvalMessage = '✅ Design fully approved by Director.'
-      }
+      req.supabase.from('task_revision').insert({
+        task_id: taskId,
+        from_user: req.user.id,
+        to_user: task.assignee,
+        role,
+        comment: role === 1
+          ? '✅ Task fully approved by Director.'
+          : '✅ Task approved by Unit Head — forwarded to Director.',
+        is_read: false,
+      })
+    ])
 
-      // Update design_approval table (using id from subtask relationship if exists)
-      const [{ error: updateErr }, { error: revisionErr }] = await Promise.all([
-        req.supabase
-          .from('design_approval')
-          .update(designApprovalUpdate)
-          .eq('id', taskId),
-        req.supabase.from('task_revision').insert({
-          task_id: taskId,
-          from_user: req.user.id,
-          to_user: task.assignee,
-          role,
-          comment: approvalMessage,
-          is_read: false,
-        })
-      ])
+    if (updateErr) throw new Error(updateErr.message)
+    if (revisionErr) throw new Error(revisionErr.message)
 
-      if (updateErr) throw new Error(updateErr.message)
-      if (revisionErr) throw new Error(revisionErr.message)
-
-    } else {
-      // Handle regular task approvals
-      const col = role === 'director' ? 'director' : 'unit_head'
-      const [{ error: updateErr }, { error: revisionErr }] = await Promise.all([
-        req.supabase
-          .from('task_approval')
-          .update({ [col]: true, revision_comment: null, revised_at: null })
-          .eq('task_id', taskId),
-
-        req.supabase.from('task_revision').insert({
-          task_id: taskId,
-          from_user: req.user.id,
-          to_user: task.assignee,
-          role,
-          comment: role === 'director'
-            ? '✅ Task fully approved by Director.'
-            : '✅ Task approved by Unit Head — forwarded to Director.',
-          is_read: false,
-        })
-      ])
-
-      if (updateErr) throw new Error(updateErr.message)
-      if (revisionErr) throw new Error(revisionErr.message)
-    }
-
-    return res.status(204)
+    const formattedTasks = await fetchTasks(req.supabase, req.user.id, null, parentId)
+    return res.status(200).json(formattedTasks)
 
   } catch (err) {
     console.log('Error approving task: ', err.message)
@@ -318,7 +247,7 @@ router.post('/approve', async (req, res) => {
 })
 
 router.post('/revision_request', async (req, res) => {
-  const { taskId, comment, role } = req.body
+  const { taskId, comment, role, parentId } = req.body
 
   try {
     const { data: task } = await req.supabase
@@ -331,18 +260,19 @@ router.post('/revision_request', async (req, res) => {
     if (task.design) {
       // For design tasks, reset the relevant approval flag based on the role
       const designResetCols = {}
+      const engineersId = new Set ([13, 14, 15, 16, 18, 19])
 
-      if (role === 'director') {
+      if (role === 1) {
         // Director resets all flags
         designResetCols.senior_draftsman = false
         designResetCols.engineers = false
         designResetCols.unit_head = false
         designResetCols.director = false
-      } else if (role === 'unit_head') {
+      } else if (role === 4) {
         // Unit head resets from engineers onwards
         designResetCols.engineers = false
         designResetCols.unit_head = false
-      } else if (role === 'engineers') {
+      } else if (role.find(id => engineersId.has(id))) {
         // Engineers reset themselves
         designResetCols.engineers = false
       }
@@ -360,7 +290,7 @@ router.post('/revision_request', async (req, res) => {
       ])
     } else {
       // Regular task revision logic
-      const resetCols = role === 'director'
+      const resetCols = role === 1
         ? { unit_head: false, director: false, revision_comment: comment, revised_at: new Date().toISOString() }
         : { unit_head: false, revision_comment: comment, revised_at: new Date().toISOString() }
 
@@ -378,7 +308,8 @@ router.post('/revision_request', async (req, res) => {
       ])
     }
 
-    return res.status(204)
+    const formattedTasks = await fetchTasks(req.supabase, req.user.id, null, parentId)
+    return res.status(200).json(formattedTasks)
 
   } catch (err) {
     console.log('Error requesting revision: ', err.message)
@@ -387,7 +318,7 @@ router.post('/revision_request', async (req, res) => {
 })
 
 router.post('/resubmit', async (req, res) => {
-  const { taskId, newOutputLink } = req.body
+  const { taskId, newOutputLink, parentId } = req.body
 
   try {
     const { data: task } = await req.supabase
@@ -402,7 +333,7 @@ router.post('/resubmit', async (req, res) => {
         .from('task_output').update({ link: newOutputLink }).eq('task_id', taskId).select('id')
       if (updErr) throw new Error(updErr.message)
       if (!updated || updated.length === 0) {
-        const { error: insErr } = await supabase
+        const { error: insErr } = await req.supabase
           .from('task_output').insert({ task_id: taskId, link: newOutputLink })
         if (insErr) throw new Error(insErr.message)
       }
@@ -423,10 +354,10 @@ router.post('/resubmit', async (req, res) => {
         .eq('task_id', taskId)
     ])
 
-    const revisorRole = lastRevision?.role || 'unit_head'
+    const revisorRole = lastRevision?.role || 4
     const assigneeId = task?.assignee || req.user.id
 
-    if (revisorRole === 'director') {
+    if (revisorRole === 1) {
       await req.supabase.from('task_approval')
         .update({ unit_head: true, director: false, revision_comment: null, revised_at: null })
         .eq('task_id', taskId)
@@ -436,7 +367,7 @@ router.post('/resubmit', async (req, res) => {
           task_id: taskId,
           from_user: req.user.id,
           to_user: lastRevision.from_user,
-          role: 'director',
+          role: 1,
           comment: '📎 Revised output resubmitted — awaiting your final approval.',
           is_read: false,
         })
@@ -446,8 +377,8 @@ router.post('/resubmit', async (req, res) => {
         { onConflict: 'task_id' }
       )
     } else {
-      const { isOfficeMember } = await resolvePosUnitIds(req.supabase, assigneeId)
-      const assignerData = await selectAssigneeAssigner(req.supabase, taskId)
+      const { isOfficeMember } = await resolvePosUnitIds(req.supabase, assigneeId, null)
+      const assignerData = await selectAssigneeAssigner(req.supabase, taskId, null)
       const isSelfAssigned = assignerData?.assigner === assigneeId
 
       if (isOfficeMember || isSelfAssigned) {
@@ -461,11 +392,14 @@ router.post('/resubmit', async (req, res) => {
       }
 
       await _notifySubmission(
-        taskId, assigneeId, req.user.id,
+        req.supabase, taskId, null, assigneeId, req.user.id,
         '📎 Revised output resubmitted — awaiting your review.',
         isSelfAssigned
       )
     }
+    const formattedTasks = await fetchTasks(req.supabase, req.user.id, null, parentId)
+    return res.status(200).json(formattedTasks)
+
   } catch (err) {
     console.log('Error resubmiting: ', err.message)
     return res.status(500).json({ error: err.message })

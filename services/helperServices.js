@@ -1,13 +1,16 @@
-export const resolvePosUnitIds = async (supabase, userId = null) => {
+export const resolvePosUnitIds = async (supabase, userId = null, unitId = null) => {
   let query = supabase
     .from('position')
     .select('user_id, unit_id, pos_id')
 
   if (userId) query = query.eq('user_id', userId);
+  else if(unitId) query = query.eq('unit_id', unitId)
   else query = query.in('pos_id', [1, 4])
 
   const { data: userData } = await query
-  const unitId = userData.unit_id
+
+  const unitMembers = unitId ? userData.user_id : null
+  const userUnitId = userData.unit_id // Unit ID of the User
   const directorId = userId ? null : userData.filter(p => p.pos_id === 1)?.user_id
   const allUnitHeads = () => {
     if (userId) return []
@@ -25,8 +28,9 @@ export const resolvePosUnitIds = async (supabase, userId = null) => {
     isUnitHead,
     isMember,
     isOfficeMember,
-    unitId,
+    userUnitId,
     directorId,
+    unitMembers,
     allUnitHeads
   }
 }

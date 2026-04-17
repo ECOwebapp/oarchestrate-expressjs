@@ -1,28 +1,39 @@
 import { resolvePosUnitIds } from "./helperServices.js"
+import { columnResolver } from "./taskServices.js"
 
 // ── NOTIFICATION HELPER ─────────────────────────────────────────────────────
-export const _notifySubmission = async (req, taskId, assigneeId, fromUserId, message = null, isSelfAssigned = false) => {
+export const _notifySubmission = async (
+    supabase,
+    taskId = null,
+    subtaskId = null,
+    assigneeId,
+    fromUserId,
+    message = null,
+    isSelfAssigned = false
+) => {
     const [
         { isOfficeMember, unitId },
         { directorId, allUnitHeads }
     ] = await Promise.all([
-        await resolvePosUnitIds(req.supabase, assigneeId),
-        await resolvePosUnitIds(req.supabase)
+        await resolvePosUnitIds(supabase, assigneeId),
+        await resolvePosUnitIds(supabase)
     ])
+
+    const { idColumn, targetId } = columnResolver(taskId, subtaskId)
 
     if (isOfficeMember || isSelfAssigned) {
         if (directorId) {
-            const { data: existing } = await req.supabase
+            const { data: existing } = await supabase
                 .from('task_revision')
                 .select('id')
-                .eq('task_id', taskId)
+                .eq(idColumn, targetId)
                 .eq('to_user', directorId)
                 .eq('is_read', false)
                 .maybeSingle()
 
             if (!existing) {
-                await req.supabase.from('task_revision').insert({
-                    task_id: taskId,
+                await supabase.from('task_revision').insert({
+                    [idColumn]: targetId,
                     from_user: fromUserId,
                     to_user: directorId,
                     role: 1, // directorId
@@ -31,9 +42,9 @@ export const _notifySubmission = async (req, taskId, assigneeId, fromUserId, mes
                 })
             }
         }
-        await req.supabase.from('task_notif').upsert(
-            { task_id: taskId, read_by_assignee: true, read_by_unit_head: true },
-            { onConflict: 'task_id' }
+        await supabase.from('task_notif').upsert(
+            { [idColumn]: targetId, read_by_assignee: true, read_by_unit_head: true },
+            { onConflict: targetId }
         )
     } else {
         const uhIds = [...new Set((
@@ -48,10 +59,10 @@ export const _notifySubmission = async (req, taskId, assigneeId, fromUserId, mes
             .includes(fromUserId)
 
         for (const uhId of uhIds) {
-            const { data: existing } = await req.supabase
+            const { data: existing } = await supabase
                 .from('task_revision')
                 .select('id')
-                .eq('task_id', taskId)
+                .eq(idColumn, targetId)
                 .eq('to_user', uhId)
                 .eq('is_read', false)
                 .maybeSingle()
@@ -59,16 +70,16 @@ export const _notifySubmission = async (req, taskId, assigneeId, fromUserId, mes
             console.log('I should\'ve been called once: ', uhId)
 
             if (!existing) {
-                await req.supabase.from('task_revision').insert({
-                    task_id: taskId,
+                await supabase.from('task_revision').insert({
+                    [idColumn]: targetId,
                     from_user: fromUserId,
                     to_user: uhId,
                     role: 4, // Unit Head
                     comment: message || 'From Unit Head: Output submitted — awaiting your review.',
                 })
             } else if (!existing && isSenderAUnitHead) {
-                await req.supabase.from('task_revision').insert({
-                    task_id: taskId,
+                await supabase.from('task_revision').insert({
+                    [idColumn]: targetId,
                     from_user: fromUserId,
                     to_user: directorId,
                     role: 4,
@@ -77,9 +88,9 @@ export const _notifySubmission = async (req, taskId, assigneeId, fromUserId, mes
             }
         }
 
-        await req.supabase.from('task_notif').upsert(
-            { task_id: taskId, read_by_assignee: true },
-            { onConflict: 'task_id' }
+        await supabase.from('task_notif').upsert(
+            { [idColumn]: targetId, read_by_assignee: true },
+            { onConflict: idColumn }
         )
     }
 }
