@@ -1,7 +1,7 @@
 import express from 'express'
 import { resolvePosUnitIds } from '../services/helperServices.js'
 import { _notifySubmission } from '../services/notificationServices.js'
-import { deleteOutputFile } from '../lib/uploadOutput.js'
+import { deleteFile } from '../middleware/upload-to-drive.js'
 import { selectAssigneeAssigner, fetchTasks, columnResolver } from '../services/taskServices.js'
 const router = express.Router()
 
@@ -12,10 +12,17 @@ router.post('/insert', async (req, res) => {
     const { idColumn, targetId } = columnResolver(taskId, subtaskId)
 
     try {
-        const { data: updated, error: updErr } = await req.supabase
-            .from('task_output')
-            .insert({ idColumn: targetId, link: link })
-            .select()
+        const { data: outputRow, error: Err } = await req.supabase
+            .from('task_output').select('id, link').eq([idColumn], targetId).maybeSingle()
+        if(Err) throw new Error(Err.messae)
+
+        let insertQuery = req.supabase.from('task_output')
+        if(outputRow.id && !outputRow.link) {
+            insertQuery = insertQuery.update({ link: link }).eq([idColumn], targetId)
+        } else {
+            insertQuery = insertQuery.insert({ [idColumn]: targetId, link: link })
+        }
+        const { data: updated, error: updErr } = await insertQuery.select()
         if (updErr) throw new Error(updErr.message)
 
         const taskRow = await selectAssigneeAssigner(req.supabase, taskId, subtaskId)
@@ -29,7 +36,7 @@ router.post('/insert', async (req, res) => {
             .update({ unit_head: true })
 
         filter = taskId
-            ? filter.eq(idColumn, targetId)
+            ? filter.eq([idColumn], targetId)
             : filter.eq('subtask_id', subtaskId)
 
         if (isSelfAssigned || isOfficeMember) {
@@ -55,12 +62,12 @@ router.post('/update', async (req, res) => {
     const selectQuery = req.supabase
         .from('task_output')
         .select('link')
-        .eq(idColumn, targetId);
+        .eq([idColumn], targetId);
 
     const updateQuery = req.supabase // Ensure you use req.supabase for both
         .from('task_output')
         .update({ link: newLink })
-        .eq(idColumn, targetId);
+        .eq([idColumn], targetId);
 
     try {
         const [
@@ -86,7 +93,7 @@ router.post('/update', async (req, res) => {
         await req.supabase
             .from('task_revision')
             .update({ is_read: true })
-            .eq(idColumn, targetId)
+            .eq([idColumn], targetId)
             .eq('is_read', false)
 
         // 5. Re-notify the reviewer with the updated file
@@ -122,15 +129,14 @@ router.post('/delete', async (req, res) => {
     const selectQuery = req.supabase
         .from('task_output')
         .select('link')
-        .eq(idColumn, targetId);
+        .eq([idColumn], targetId);
 
     const updateQuery = req.supabase // Ensure you use req.supabase for both
         .from('task_output')
         .update({ link: '' })
-        .eq(idColumn, targetId)
+        .eq([idColumn], targetId)
 
     try {
-
         // 1. Grab the current link so we can delete it from Drive
         const { data: currentOutput } = await selectQuery.maybeSingle()
         const currentLink = currentOutput?.link || null
@@ -141,7 +147,7 @@ router.post('/delete', async (req, res) => {
             const { error: clearErr } = await updateQuery
             if (clearErr) throw new Error(clearErr.message)
 
-            deleteOutputFile(currentLink).catch((e) => {
+            deleteFile(currentLink, res).catch((e) => {
                 console.warn('[deleteOutput] Could not delete Drive file:', e.message)
                 throw new Error(e.message)
             })
@@ -152,20 +158,20 @@ router.post('/delete', async (req, res) => {
             req.supabase
                 .from('task_approval')
                 .update({ unit_head: false, revision_comment: null, revised_at: null })
-                .eq(idColumn, targetId),
+                .eq([idColumn], targetId),
 
             // 5. Dismiss pending reviewer notifications
             req.supabase
                 .from('task_revision')
                 .update({ is_read: true })
-                .eq(idColumn, targetId)
+                .eq([idColumn], targetId)
                 .eq('is_read', false),
 
             // 6. Defensive: clear revision flag
             req.supabase
                 .from('task_profile')
                 .update({ revision: false })
-                .eq(idColumn, targetId)
+                .eq([idColumn], targetId)
         ])
 
         if (taskId) {

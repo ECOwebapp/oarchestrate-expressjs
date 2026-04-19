@@ -8,7 +8,7 @@ router.get('/fetch', async (req, res) => {
     const { subtaskId, parentId } = req.query
 
     try {
-        const formattedSubtasks = await fetchSubtasks(req.supabase, req, user.id, subtaskId, parentId)
+        const formattedSubtasks = await fetchSubtasks(req.supabase, req.user.id, subtaskId, parentId)
         return res.status(200).json(formattedSubtasks);
 
     } catch (e) {

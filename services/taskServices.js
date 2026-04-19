@@ -164,7 +164,7 @@ export const fetchSubtasks = async (supabase, userId, subtaskId = null, parentId
     // 2. Role-Based Fetching Logic
     if (isUnitHead) {
         // Unit Head Logic: The "Scenario B" Merge
-        const { unitMembers } = await resolvePosUnitIds(req.supabase, null, activeUnitHeadId)
+        const { unitMembers } = await resolvePosUnitIds(supabase, null, activeUnitHeadId)
         const allowedIds = [...new Set([userId, ...(unitMembers?.map(m => m.user_id) || [])])];
 
         // Parallel queries to handle the cross-table "OR" logic

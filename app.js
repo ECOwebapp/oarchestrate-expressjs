@@ -1,4 +1,4 @@
-// index.js
+import 'dotenv/config'
 import express from 'express';
 import cors from 'cors'
 import { verifyToken } from './middleware/verifyToken.js';
@@ -8,6 +8,7 @@ import projectRoute from './routes/projects.js'
 import taskRoute from './routes/task.js'
 import subtaskRoute from './routes/subtasks.js'
 import outputRoute from './routes/output.js'
+import driveAPI from './middleware/upload-to-drive.js'
 const app = express();
 const PORT = 3000;
 
@@ -24,13 +25,13 @@ const allowedOrigins = [
 //   next();
 // });
 
-app.use(express.json({ limit: '5mb' })); // Increase from default 100kb
-app.use(express.urlencoded({ limit: '5mb', extended: true }));
+app.use(express.json({ limit: '3mb' })); // Increase from default 100kb
+app.use(express.urlencoded({ limit: '3mb', extended: true }));
 
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
+    // if (!origin) return callback(null, true);
     
     const isAllowed = allowedOrigins.some(allowed => {
       return allowed instanceof RegExp ? allowed.test(origin) : allowed === origin;
@@ -55,6 +56,7 @@ app.use('/ppa', verifyToken, projectRoute)
 app.use('/tasks', verifyToken, taskRoute)
 app.use('/subtasks', verifyToken, subtaskRoute)
 app.use('/output', verifyToken, outputRoute)
+app.all('/api/upload-to-drive', verifyToken, driveAPI)
 
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
