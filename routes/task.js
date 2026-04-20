@@ -44,10 +44,10 @@ router.get('/fetch_revisions', async (req, res) => {
       await req.supabase.from('task_revision').update({ is_read: true }).in('id', unread)
     }
 
-    return (data || []).map(r => ({
+    return res.json(200).json((data || []).map(r => ({
       ...r,
       fromName: resolveNames[r.fromName],
-    }))
+    })))
 
   } catch (err) {
     console.log('Error fetching revisions: ', err.message)

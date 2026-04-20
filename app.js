@@ -9,6 +9,7 @@ import taskRoute from './routes/task.js'
 import subtaskRoute from './routes/subtasks.js'
 import outputRoute from './routes/output.js'
 import driveAPI from './middleware/upload-to-drive.js'
+import designRoute from './routes/design.js'
 const app = express();
 const PORT = 3000;
 
@@ -57,6 +58,7 @@ app.use('/tasks', verifyToken, taskRoute)
 app.use('/subtasks', verifyToken, subtaskRoute)
 app.use('/output', verifyToken, outputRoute)
 app.all('/api/upload-to-drive', verifyToken, driveAPI)
+app.use('/design', verifyToken, designRoute)
 
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
