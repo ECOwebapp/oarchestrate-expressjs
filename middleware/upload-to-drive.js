@@ -157,6 +157,9 @@ export default async function handler(req, res) {
             // Override the standard API call to initialize a resumable session
             url: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
             method: 'POST',
+            
+            // When not specified, Google Drive API will not return a CORS
+            // which will cause the browser to block the response body
             headers: {
               'Origin': FRONT_END_URL
             }
