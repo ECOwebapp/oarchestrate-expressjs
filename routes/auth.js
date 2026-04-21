@@ -52,14 +52,14 @@ router.post('/login', async (req, res) => {
         // Assume fetchUserData is a helper function you've defined
         const userData = await fetchUserData(supabase, userId);
 
-        res.status(200).json({
+        return res.status(200).json({
             userData: userData,
             session: authData.session
         });
 
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
+        return res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
@@ -156,7 +156,7 @@ router.post('/logout', verifyToken, async (req, res) => {
     // This tells Supabase to invalidate the session/token immediately
     const { error } = await req.supabase.auth.signOut();
 
-    if (error) res.json({ error: error.message })
+    if (error) return res.json({ error: error.message })
     return res.status(200).json({ message: 'Logged out successfully' });
 })
 
