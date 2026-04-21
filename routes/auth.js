@@ -171,6 +171,7 @@ router.get('/me', verifyToken, async (req, res) => {
         });
     } catch (err) {
         console.log("Failed to fetch user data: ", err);
+        return res.status(500).json({ error: err.message })
     }
 });
 
