@@ -75,17 +75,17 @@ router.get('/fetch_genders', async (req, res) => {
 })
 
 // Member management
-router.get('/fetch_members', async(req, res) => {
-    try{
+router.get('/fetch_members', async (req, res) => {
+    try {
         const result = await fetchMembers(req.supabase)
         return res.status(200).json({ members: result })
-    } catch(err) {
+    } catch (err) {
         console.log('Failed to fetch members: ', e)
         return res.status(500).json({ error: err.message })
     }
 })
 
-router.post('/remove_members', async(req, res) => {
+router.post('/remove_members', async (req, res) => {
     const { userId } = req.body
     try {
         const { error, status } = await req.supabase.functions.invoke('delete-user', {
@@ -99,6 +99,46 @@ router.post('/remove_members', async(req, res) => {
         }
     } catch (e) {
         console.log('Error removing: ', e)
+        return res.status(500).json({ error: err.message })
+    }
+})
+
+router.post('/approve_user', async (req, res) => {
+    const { userId } = req.body
+    try {
+        const { error } = await req.supabase
+            .from('account_status')
+            .update({
+                status_id: 2,
+                notif_read_by_director: true,
+                reviewed_by: req.user?.id,
+                reviewed_at: new Date().toISOString(),
+            })
+            .eq('user_id', userId)
+        if (error) throw error
+        return res.status(201)
+    } catch (e) {
+        console.error('[notifStore] approveUser error:', e)
+        return res.status(500).json({ error: err.message })
+    }
+})
+
+router.post('/deny_user', async (req, res) => {
+    const { userId } = req.body
+    try {
+        const { error } = await req.supabase
+            .from('account_status')
+            .update({
+                status_id: 3,
+                notif_read_by_director: true,
+                reviewed_by: req.user?.id,
+                reviewed_at: new Date().toISOString(),
+            })
+            .eq('user_id', userId)
+        if (error) throw error
+        return res.status(201)
+    } catch (e) {
+        console.error('[notifStore] denyUser error:', e)
         return res.status(500).json({ error: err.message })
     }
 })

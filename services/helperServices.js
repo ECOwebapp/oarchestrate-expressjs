@@ -10,13 +10,17 @@ export const resolvePosUnitIds = async (supabase, userId = null, unitId = null) 
 
   const { data: userData } = await query
 
-  const unitMembers = unitId ? userData.user_id : null
+  const unitMembers = unitId ? userData.map(u => u.user_id) : []
   const userUnitId = userData.unit_id // Unit ID of the User
   const directorId = userId ? null : userData.filter(p => p.pos_id === 1)?.user_id
   const allUnitHeads = () => {
     if (userId) return []
     return userData.filter(link => link.pos_id === 4)
   }
+
+  // The Unit ID where a Unit Head is currently in.
+  // Remove or replace this if other variables already performed the same function.
+  const activeUnitId = userData.find(p => p.pos_id === 4).unit_id
 
   // Boolean variables
   const isDirector = userData?.some(p => p.pos_id === 1);
@@ -32,7 +36,8 @@ export const resolvePosUnitIds = async (supabase, userId = null, unitId = null) 
     userUnitId,
     directorId,
     unitMembers,
-    allUnitHeads
+    allUnitHeads,
+    activeUnitId
   }
 }
 

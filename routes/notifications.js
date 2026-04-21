@@ -3,6 +3,8 @@ import { resolvePosUnitIds, resolvePosUnitNames } from '../services/helperServic
 import { resolveNames } from '../services/taskServices'
 const router = express.Router()
 
+const TOOU_ID = 3
+
 router.get('/fetch') = async (req, res) => {
     const uid = req.user.id
     if (!uid) return
@@ -13,8 +15,8 @@ router.get('/fetch') = async (req, res) => {
     try {
 
         // ── 1. Registrations (director only) ────────────────
-        // Schema: account_status.user_id → auth.users
-        //         user_profile.user_id   → auth.users  (PK is user_id, NOT id)
+        // Schema: account_status.user_id → users
+        //         user_profile.user_id   → users  (PK is user_id, NOT id)
         //         position.user_id, position.pos_id → position_name.id
         if (isDirector) {
             const { data: regs, error: regsErr } = await req.supabase
@@ -82,19 +84,15 @@ router.get('/fetch') = async (req, res) => {
         let taskErr = null
 
         if (isDirector) {
-            // Get Office unit id
-            const { data: officeUnit } = await supabase
-                .from('unit_name').select('id').ilike('name', 'office').maybeSingle()
-            const officeUnitId = officeUnit?.id || null
             let officeFilter = null
-            if (officeUnitId) {
-                const { data: om } = await supabase
-                    .from('position').select('user_id').eq('unit_id', officeUnitId)
+            if (TOOU_ID) {
+                const { data: om } = await req.supabase
+                    .from('position').select('user_id').eq('unit_id', TOOU_ID)
                 const officeIds = (om || []).map(m => m.user_id)
                 if (officeIds.length) officeFilter = officeIds.map(id => `assignee.eq.${id}`).join(',')
             }
 
-            const { data: d1, error: e1 } = await supabase
+            const { data: d1, error: e1 } = await req.supabase
                 .from('task')
                 .select(`id, assignee, assigner,
             task_profile ( title, urgent, task_type_ref:task_type(task_type) ),
@@ -108,7 +106,7 @@ router.get('/fetch') = async (req, res) => {
 
             let d2 = []
             if (officeFilter) {
-                const { data: od } = await supabase
+                const { data: od } = await req.supabase
                     .from('task')
                     .select(`id, assignee, assigner,
               task_profile!task_id ( title, urgent, task_type_ref:task_type(task_type) ),
@@ -125,25 +123,20 @@ router.get('/fetch') = async (req, res) => {
             })
             taskErr = e1
 
-        } else if (auth.isUnitHead) {
+        } else if (isUnitHead) {
             // Unit head: tasks from unit members with output submitted, not yet approved
 
-            const activeUnitId = computed(() => {
-                // Look for the position entry where they are a Unit Head (ID 4)
-                const headRole = auth.positions?.find(p => p.pos_id === 4);
+            // So much for efficiency ehhh? Look what have you done Hexer.
+            const { activeUnitId } = await resolvePosUnitIds(req.supabase, uid, null)
+            const { unitMembers } = await resolvePosUnitIds(req.supabase, null, activeUnitId)
 
-                // Return that specific unit_id, or null if they aren't a Unit Head anywhere
-                return headRole?.unit_id ?? null;
-            });
 
-            const { data: unitMembers } = await supabase
-                .from('position').select('user_id').eq('unit_id', activeUnitId.value)
             const memberIds = (unitMembers || [])
                 .map(m => m.user_id).filter(id => id !== uid)
 
             if (memberIds.length) {
                 const filter = memberIds.map(id => `assignee.eq.${id}`).join(',')
-                const { data: d, error: e } = await supabase
+                const { data: d, error: e } = await req.supabase
                     .from('task')
                     .select(`id, assignee, assigner,
               task_profile ( title, urgent, task_type_ref:task_type(task_type) ),
@@ -157,7 +150,7 @@ router.get('/fetch') = async (req, res) => {
             }
 
         } else {
-            const { data: d, error: e } = await supabase
+            const { data: d, error: e } = await req.supabase
                 .from('task')
                 .select(`id, assignee, assigner,
             task_profile ( title, urgent, task_type_ref:task_type(task_type) ),
@@ -176,23 +169,23 @@ router.get('/fetch') = async (req, res) => {
             .flatMap(t => [t.assigner, t.assignee]).filter(Boolean))]
         let nm2 = {}
         if (uids2.length) {
-            const { data: p2 } = await supabase
+            const { data: p2 } = await req.supabase
                 .from('user_profile').select('user_id, fname, lname').in('user_id', uids2)
             nm2 = Object.fromEntries(
-                (p2 || []).map(p => [p.user_id, `${p.fname || ''} ${p.lname || ''}`.trim()])
+                (p2 || []).map(p => [p.user_id, resolveNames({ fname: p.fname, lname: p.lname }).trim()])
             )
         }
 
-        ; (taskRows || []).forEach(t => {
+        (taskRows || []).forEach(t => {
             const urgent = !!t.task_profile?.urgent
             const taskType = t.task_profile?.task_type_ref?.task_type?.toLowerCase() || 'regular'
             let isRead = false
-            if (auth.isDirector) isRead = !!t.task_notif?.read_by_director
-            else if (auth.isUnitHead) isRead = !!t.task_notif?.read_by_unit_head
+            if (isDirector) isRead = !!t.task_notif?.read_by_director
+            else if (isUnitHead) isRead = !!t.task_notif?.read_by_unit_head
             else isRead = !!t.task_notif?.read_by_assignee
 
             // For members: only show their own pending tasks
-            if (!auth.isDirector && !auth.isUnitHead) {
+            if (!isDirector && !isUnitHead) {
                 if (t.assignee !== uid) return
             }
 
@@ -202,9 +195,9 @@ router.get('/fetch') = async (req, res) => {
                 id: `task-${t.id}`,
                 type: 'task_submitted',
                 title: t.task_profile?.title || 'Untitled Task',
-                body: auth.isUnitHead
+                body: isUnitHead
                     ? `${submitter} submitted output — awaiting your review · ${taskType}${urgent ? ' · URGENT' : ''}`
-                    : auth.isDirector
+                    : isDirector
                         ? `${submitter} · ${taskType}${urgent ? ' · URGENT' : ''} · approved by Unit Head`
                         : `Assigned by ${assigner} · ${taskType}${urgent ? ' · URGENT' : ''}`,
                 time: t.task_duration?.created,
@@ -214,7 +207,7 @@ router.get('/fetch') = async (req, res) => {
         })
 
         // ── 3. Pokes ─────────────────────────────────────────
-        const { data: pokes, error: pokeErr } = await supabase
+        const { data: pokes, error: pokeErr } = await req.supabase
             .from('task_poke')
             .select(`
           id, task_id, from_user, message, created_at, is_read,
@@ -229,7 +222,7 @@ router.get('/fetch') = async (req, res) => {
         const pokerIds = [...new Set((pokes || []).map(p => p.from_user).filter(Boolean))]
         let pokerMap = {}
         if (pokerIds.length) {
-            const { data: pp } = await supabase
+            const { data: pp } = await req.supabase
                 .from('user_profile')
                 .select('user_id, fname, lname')
                 .in('user_id', pokerIds)
@@ -250,14 +243,43 @@ router.get('/fetch') = async (req, res) => {
             })
         })
 
+        results.sort((a, b) => new Date(b.time) - new Date(a.time))
+        return res.status(200).json({ results })
+
     } catch (e) {
         console.error('[notifStore] fetchNotifs error:', e)
-    } finally {
-        loading.value = false
+        return res.status(500).json({ error: e.message })
     }
-
-    results.sort((a, b) => new Date(b.time) - new Date(a.time))
-    notifs.value = results
 }
+
+router.post('/mark_all_as_read', async (req, res) => {
+    const { taskIds, pokeIds } = req.body
+    const { isDirector, isUnitHead } = await resolvePosUnitIds(req.supabase, req.user.id, null)
+    try {
+        // Do NOT mass-mark registrations as read here —
+        // they are individually marked read only when approved/denied
+        let query = []
+        if (taskIds.length) {
+            const col = isDirector
+                ? 'read_by_director'
+                : isUnitHead
+                    ? 'read_by_unit_head'
+                    : 'read_by_assignee'
+            query.push(req.supabase.from('task_notif').update({ [col]: true }).in('task_id', taskIds))
+        }
+        if (pokeIds.length) {
+            query.push(req.supabase.from('task_poke').update({ is_read: true }).in('id', pokeIds))
+        }
+
+        const [taskNotif, taskPoke] = await Promise.all(query)
+        if (taskNotif.error) throw taskNotif.error
+        if (taskPoke.error) throw taskPoke.error
+
+        return res.status(201)
+    } catch (e) {
+        console.error('[notifStore] markAllRead error:', e)
+        return res.status(500).json({ error: e.message })
+    }
+})
 
 export default router
