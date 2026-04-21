@@ -143,10 +143,10 @@ router.post('/register', async(req, res) => {
 router.get('/state', async (req, res) => {
     supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_IN' && session?.user) {
-            res.status(200)
+            return res.status(200)
         }
         else if (event === 'SIGNED_OUT') {
-            res.status(401)
+            return res.status(401)
         }
     })
 })
@@ -157,7 +157,7 @@ router.post('/logout', verifyToken, async (req, res) => {
     const { error } = await req.supabase.auth.signOut();
 
     if (error) res.json({ error: error.message })
-    res.status(200).json({ message: 'Logged out successfully' });
+    return res.status(200).json({ message: 'Logged out successfully' });
 })
 
 router.get('/me', verifyToken, async (req, res) => {
@@ -165,7 +165,7 @@ router.get('/me', verifyToken, async (req, res) => {
         // req.user was attached by verifyToken middleware
         const userData = await fetchUserData(req.supabase, req.user.id);
 
-        res.status(200).json({
+        return res.status(200).json({
             userData: userData,
             user_id: req.user.id
         });
