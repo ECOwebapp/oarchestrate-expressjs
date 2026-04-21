@@ -13,10 +13,9 @@ export const resolvePosUnitIds = async (supabase, userId = null, unitId = null) 
   const unitMembers = unitId ? userData.map(u => u.user_id) : []
   const userUnitId = userData.map(u => u.unit_id) || [];
   const directorId = userId ? null : userData.filter(p => p.pos_id === 1)?.user_id
-  const allUnitHeads = () => {
-    if (userId) return []
-    return userData.filter(link => link.pos_id === 4)
-  }
+  const allUnitHeads = userId
+    ? []
+    : userData.filter(link => link.pos_id === 4);
 
   // The Unit ID where a Unit Head is currently in.
   // Remove or replace this if other variables already performed the same function.
