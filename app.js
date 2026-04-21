@@ -36,7 +36,7 @@ app.use(express.urlencoded({ limit: '3mb', extended: true }));
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
+    // if (!origin) return callback(null, true);
     
     const isAllowed = allowedOrigins.some(allowed => {
       return allowed instanceof RegExp ? allowed.test(origin) : allowed === origin;
