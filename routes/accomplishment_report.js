@@ -1,6 +1,6 @@
 import express from 'express'
-import { resolvePosUnitIds } from '../services/helperServices'
-import { resolveNames } from '../services/taskServices'
+import { resolvePosUnitIds } from '../services/helperServices.js'
+import { resolveNames } from '../services/taskServices.js'
 const router = express.Router()
 
 router.get('/load_all_tasks', async (req, res) => {
