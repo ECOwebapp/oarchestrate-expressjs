@@ -13,6 +13,7 @@ import designRoute from './routes/design.js'
 import usersInfoRoute from './routes/users_info.js'
 import posRoleRoute from './routes/positions.js'
 import notifRoute from './routes/notifications.js'
+import reportRoute from './routes/accomplishment_report.js'
 const app = express();
 const PORT = 3000;
 
@@ -65,6 +66,7 @@ app.use('/design', verifyToken, designRoute)
 app.use('/users_info', verifyToken, usersInfoRoute)
 app.use('/office', verifyToken, posRoleRoute)
 app.use('/notifications', verifyToken, notifRoute)
+app.use('/report', verifyToken, reportRoute)
 
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
