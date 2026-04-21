@@ -1,11 +1,11 @@
 import express from 'express'
-import { resolvePosUnitIds, resolvePosUnitNames } from '../services/helperServices'
-import { resolveNames } from '../services/taskServices'
+import { resolvePosUnitIds, resolvePosUnitNames } from '../services/helperServices.js'
+import { resolveNames } from '../services/taskServices.js'
 const router = express.Router()
 
 const TOOU_ID = 3
 
-router.get('/fetch') = async (req, res) => {
+router.get('/fetch', async (req, res) => {
     const uid = req.user.id
     if (!uid) return
     const results = []
@@ -131,8 +131,7 @@ router.get('/fetch') = async (req, res) => {
             const { unitMembers } = await resolvePosUnitIds(req.supabase, null, activeUnitId)
 
 
-            const memberIds = (unitMembers || [])
-                .map(m => m.user_id).filter(id => id !== uid)
+            const memberIds = (unitMembers || []).filter(id => id !== uid)
 
             if (memberIds.length) {
                 const filter = memberIds.map(id => `assignee.eq.${id}`).join(',')
@@ -244,13 +243,13 @@ router.get('/fetch') = async (req, res) => {
         })
 
         results.sort((a, b) => new Date(b.time) - new Date(a.time))
-        return res.status(200).json({ results })
+        return res.status(200).json({ data: results })
 
     } catch (e) {
         console.error('[notifStore] fetchNotifs error:', e)
         return res.status(500).json({ error: e.message })
     }
-}
+})
 
 router.post('/mark_all_as_read', async (req, res) => {
     const { taskIds, pokeIds } = req.body
@@ -281,5 +280,35 @@ router.post('/mark_all_as_read', async (req, res) => {
         return res.status(500).json({ error: e.message })
     }
 })
+
+// Keep track of connected clients
+let clients = [];
+
+// Endpoint for the Vue frontend to connect
+router.get('/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    // Add this client to our list
+    clients.push(res);
+
+    req.on('close', () => {
+        clients = clients.filter(client => client !== res);
+    });
+});
+
+// Endpoint for your Supabase Webhook
+router.post('/webhook', (req, res) => {
+    const notification = req.body;
+
+    // Broadcast to all connected clients
+    clients.forEach(client => {
+        client.write(`data: ${JSON.stringify(notification)}\n\n`);
+    });
+
+    res.status(200).send('Event relayed');
+});
 
 export default router

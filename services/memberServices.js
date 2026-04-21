@@ -1,6 +1,5 @@
 export const fetchMembers = async(supabase) => {
     try {
-        loading.value = true
         const [resMembers, resProf, resStatus] = await Promise.all([
             supabase.from('members').select('*'),
             supabase.from('profession').select('user_id, profession_name:prof_id(prof_name)'),

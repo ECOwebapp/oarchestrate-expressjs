@@ -1,5 +1,5 @@
 import express from 'express'
-import { fetchMembers } from '../services/memberServices'
+import { fetchMembers } from '../services/memberServices.js'
 const router = express.Router()
 
 // Address
@@ -80,7 +80,7 @@ router.get('/fetch_members', async (req, res) => {
         const result = await fetchMembers(req.supabase)
         return res.status(200).json({ members: result })
     } catch (err) {
-        console.log('Failed to fetch members: ', e)
+        console.log('Failed to fetch members: ', err)
         return res.status(500).json({ error: err.message })
     }
 })

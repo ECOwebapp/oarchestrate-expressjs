@@ -1,10 +1,13 @@
 import { createSupabaseUserClient } from "../lib/supabaseClient.js";
 
 export const verifyToken = async (req, res, next) => {
-    const authHeader = req.headers.authorization;
+    const authHeader = req.headers.authorization || req.query.token;
     const token = authHeader?.split(' ')[1]; // Extract just the JWT
   
     if (!token) return res.status(401).json({ error: 'Access token required' });
+    if (req.path === '/webhook') {
+      return next();
+  }
   
     try {
       // Initialize the scoped client using your new helper

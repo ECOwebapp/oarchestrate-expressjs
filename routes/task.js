@@ -44,7 +44,7 @@ router.get('/fetch_revisions', async (req, res) => {
       await req.supabase.from('task_revision').update({ is_read: true }).in('id', unread)
     }
 
-    return res.json(200).json((data || []).map(r => ({
+    return res.status(200).json((data || []).map(r => ({
       ...r,
       fromName: resolveNames[r.fromName],
     })))
@@ -87,8 +87,7 @@ router.post('/upsert', async (req, res) => {
     // 5. Approval Logic (Business Rules)
     const { userUnitId } = await resolvePosUnitIds(req.supabase, assigneeId, null)
 
-    const assigneeUnits = userUnitId?.map(u => u.unit_id) || [];
-    const isOfficeMember = assigneeUnits.includes(3); // Assuming 3 is Office
+    const isOfficeMember = userUnitId.includes(3); // Assuming 3 is Office
 
     const isSelfAssigned = assigneeId === req.user.id;
     const isDirectorSelfAssign = isDirector && isSelfAssigned;

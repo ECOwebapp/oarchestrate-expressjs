@@ -48,8 +48,7 @@ router.post('/upsert', async (req, res) => {
         // 5. Approval Logic (Business Rules)
         const { userUnitId } = await resolvePosUnitIds(req.supabase, assigneeId, null)
 
-        const assigneeUnits = userUnitId?.map(u => u.unit_id) || [];
-        const isOfficeMember = assigneeUnits.includes(3); // Assuming 3 is Office
+        const isOfficeMember = userUnitId.includes(3); // Assuming 3 is Office
 
         const isSelfAssigned = assigneeId === req.user.id;
         const isDirectorSelfAssign = isDirector && isSelfAssigned;
@@ -390,10 +389,10 @@ router.get('/fetch_revisions', async (req, res) => {
             await req.supabase.from('task_revision').update({ is_read: true }).in('id', unread)
         }
 
-        return (data || []).map(r => ({
+        return res.status(200).json((data || []).map(r => ({
             ...r,
             fromName: resolveNames[r.fromName],
-        }))
+        })))
 
     } catch (err) {
         console.log('Error fetching revisions: ', err.message)
@@ -402,74 +401,74 @@ router.get('/fetch_revisions', async (req, res) => {
 })
 
 router.post('/revision_request', async (req, res) => {
-  const { subtaskId, comment, role, parentId } = req.body
+    const { subtaskId, comment, role, parentId } = req.body
 
-  try {
-    const { data: subtask } = await req.supabase
-      .from('subtask')
-      .select('design, assignee')
-      .eq('id', subtaskId)
+    try {
+        const { data: subtask } = await req.supabase
+            .from('subtask')
+            .select('design, assignee')
+            .eq('id', subtaskId)
 
-    if (!subtask) throw new Error('Subtask not found')
+        if (!subtask) throw new Error('Subtask not found')
 
-    if (subtask.design) {
-      // For design tasks, reset the relevant approval flag based on the role
-      const designResetCols = {}
-      const engineersId = new Set ([13, 14, 15, 16, 18, 19])
+        if (subtask.design) {
+            // For design tasks, reset the relevant approval flag based on the role
+            const designResetCols = {}
+            const engineersId = new Set([13, 14, 15, 16, 18, 19])
 
-      if (role === 1) {
-        // Director resets all flags
-        designResetCols.senior_draftsman = false
-        designResetCols.engineers = false
-        designResetCols.unit_head = false
-        designResetCols.director = false
-      } else if (role === 4) {
-        // Unit head resets from engineers onwards
-        designResetCols.engineers = false
-        designResetCols.unit_head = false
-      } else if (role.find(id => engineersId.has(id))) {
-        // Engineers reset themselves
-        designResetCols.engineers = false
-      }
+            if (role === 1) {
+                // Director resets all flags
+                designResetCols.senior_draftsman = false
+                designResetCols.engineers = false
+                designResetCols.unit_head = false
+                designResetCols.director = false
+            } else if (role === 4) {
+                // Unit head resets from engineers onwards
+                designResetCols.engineers = false
+                designResetCols.unit_head = false
+            } else if (role.find(id => engineersId.has(id))) {
+                // Engineers reset themselves
+                designResetCols.engineers = false
+            }
 
-      await Promise.all([
-        supabase.from('task_profile').update({ revision: true }).eq('subtask_id', subtaskId),
-        supabase.from('task_revision').insert({
-          subtask_id: subtaskId,
-          from_user: req.user.id,
-          to_user: subtask.assignee,
-          role,
-          comment,
-          is_read: false,
-        })
-      ])
-    } else {
-      // Regular subtask revision logic
-      const resetCols = role === 1
-        ? { unit_head: false, director: false, revision_comment: comment, revised_at: new Date().toISOString() }
-        : { unit_head: false, revision_comment: comment, revised_at: new Date().toISOString() }
+            await Promise.all([
+                supabase.from('task_profile').update({ revision: true }).eq('subtask_id', subtaskId),
+                supabase.from('task_revision').insert({
+                    subtask_id: subtaskId,
+                    from_user: req.user.id,
+                    to_user: subtask.assignee,
+                    role,
+                    comment,
+                    is_read: false,
+                })
+            ])
+        } else {
+            // Regular subtask revision logic
+            const resetCols = role === 1
+                ? { unit_head: false, director: false, revision_comment: comment, revised_at: new Date().toISOString() }
+                : { unit_head: false, revision_comment: comment, revised_at: new Date().toISOString() }
 
-      await Promise.all([
-        supabase.from('task_approval').update(resetCols).eq('subtask_id', subtaskId),
-        supabase.from('task_profile').update({ revision: true }).eq('subtask_id', subtaskId),
-        supabase.from('task_revision').insert({
-          subtask_id: subtaskId,
-          from_user: req.user.id,
-          to_user: subtask.assignee,
-          role,
-          comment,
-          is_read: false,
-        })
-      ])
+            await Promise.all([
+                supabase.from('task_approval').update(resetCols).eq('subtask_id', subtaskId),
+                supabase.from('task_profile').update({ revision: true }).eq('subtask_id', subtaskId),
+                supabase.from('task_revision').insert({
+                    subtask_id: subtaskId,
+                    from_user: req.user.id,
+                    to_user: subtask.assignee,
+                    role,
+                    comment,
+                    is_read: false,
+                })
+            ])
+        }
+
+        const formattedSubtasks = await fetchSubtasks(req.supabase, req.user.id, null, parentId)
+        return res.status(200).json(formattedSubtasks)
+
+    } catch (err) {
+        console.log('Error requesting revision: ', err.message)
+        return res.status(500).json({ error: err.message })
     }
-
-    const formattedSubtasks = await fetchSubtasks(req.supabase, req.user.id, null, parentId)
-    return res.status(200).json(formattedSubtasks)
-
-  } catch (err) {
-    console.log('Error requesting revision: ', err.message)
-    return res.status(500).json({ error: err.message })
-  }
 })
 
 export default router

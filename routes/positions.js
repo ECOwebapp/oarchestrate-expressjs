@@ -1,5 +1,5 @@
 import express from 'express'
-import { fetchMemberPos } from '../services/memberServices'
+import { fetchMemberPos } from '../services/memberServices.js'
 const router = express.Router()
 
 router.get('/fetch_pos', async (req, res) => {
@@ -39,7 +39,7 @@ router.get('/fetch_roles', async (req, res) => {
 router.get('/fetch_member_pos', async (req, res) => {
     try {
         const result = await fetchMemberPos(req.supabase)
-        return res.status(500).json({ data: result })
+        return res.status(200).json({ data: result })
 
     } catch (e) {
         console.log('Error: ', e)
