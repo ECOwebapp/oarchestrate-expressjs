@@ -192,7 +192,7 @@ router.get('/load_own_tasks', async (req, res) => {
       task_output   ( link )
     `)
         .is('parent_id', null)
-        .eq('assignee', uid)
+        .eq('assignee', req.user.id)
 
     if (error) {
         console.error('[IndividualAccomplishmentReport] task:', error.message)
