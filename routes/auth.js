@@ -57,6 +57,7 @@ router.post('/login', async (req, res) => {
             secure: true,
             sameSite: 'none',
             maxAge: 86400000, // 24 Hours,
+            partitioned: true,
             path: '/'
         })
 
@@ -169,6 +170,7 @@ router.post('/logout', verifyToken, async (req, res) => {
         httpOnly: true,
         secure: true,
         sameSite: 'none',
+        partitioned: true,
         path: '/'
     });
     return res.status(200).json({ message: 'Logged out successfully' });
