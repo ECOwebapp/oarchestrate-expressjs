@@ -202,7 +202,7 @@ router.get('/load_own_tasks', async (req, res) => {
     const subtaskMap = {}
     if (parentTaskIds.length) {
         const { data: subtasksData, error: subtasksError } = await req.supabase
-            .from('task')
+            .from('subtask')
             .select('id, parent_task_id, task_profile ( title, description )')
             .in('parent_task_id', parentTaskIds)
             .order('id')
