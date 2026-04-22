@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import express from 'express';
 import cors from 'cors'
+import cookieParser from 'cookie-parser';
 import { verifyToken } from './middleware/verifyToken.js';
 import authRoute from './routes/auth.js'
 import profileRoute from './routes/profile.js'
@@ -32,44 +33,44 @@ const allowedOrigins = [
 //   next();
 // });
 
-app.use(express.json({ limit: '3mb' })); // Increase from default 100kb
-app.use(express.urlencoded({ limit: '3mb', extended: true }));
+app
+  .use(cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl)
+      // if (!origin) return callback(null, true);
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
-    // if (!origin) return callback(null, true);
-    
-    const isAllowed = allowedOrigins.some(allowed => {
-      return allowed instanceof RegExp ? allowed.test(origin) : allowed === origin;
-    });
+      const isAllowed = allowedOrigins.some(allowed => {
+        return allowed instanceof RegExp ? allowed.test(origin) : allowed === origin;
+      });
 
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+  }))
+  .use(cookieParser())
+  .use(express.json({ limit: '3mb' }))
+  .use(express.urlencoded({ limit: '3mb', extended: true }))
 
 // Use verifyToken for actions that requires user authentication
-// Express only uses Anon Key so it requires session_token to conduct transactions
 
-app.use('/auth', authRoute)
-app.use('/profile', verifyToken, profileRoute)
-app.use('/ppa', verifyToken, projectRoute)
-app.use('/tasks', verifyToken, taskRoute)
-app.use('/subtasks', verifyToken, subtaskRoute)
-app.use('/output', verifyToken, outputRoute)
-app.all('/api/upload-to-drive', verifyToken, driveAPI)
-app.use('/design', verifyToken, designRoute)
-app.use('/users_info', usersInfoRoute)
-app.use('/office', verifyToken, posRoleRoute)
-app.use('/notifications', notifRoute)
-app.use('/report', verifyToken, reportRoute)
-
-app.listen(PORT, () => {
+  .use('/auth', authRoute)
+  .use('/users_info', usersInfoRoute)
+  .use('/profile', verifyToken, profileRoute)
+  .use('/ppa', verifyToken, projectRoute)
+  .use('/tasks', verifyToken, taskRoute)
+  .use('/subtasks', verifyToken, subtaskRoute)
+  .use('/output', verifyToken, outputRoute)
+  .all('/api/upload-to-drive', verifyToken, driveAPI)
+  .use('/design', verifyToken, designRoute)
+  .use('/office', verifyToken, posRoleRoute)
+  .use('/notifications', notifRoute)
+  .use('/report', verifyToken, reportRoute)
+  .listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
 });
