@@ -272,8 +272,8 @@ router.post('/mark_all_as_read', verifyToken, async (req, res) => {
         }
 
         const [taskNotif, taskPoke] = await Promise.all(query)
-        if (taskNotif.error) throw taskNotif.error
-        if (taskPoke.error) throw taskPoke.error
+        if (taskNotif?.error) throw taskNotif?.error
+        if (taskPoke?.error) throw taskPoke?.error
 
         return res.status(201)
     } catch (e) {

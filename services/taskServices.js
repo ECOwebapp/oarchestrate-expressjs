@@ -2,7 +2,7 @@ import { resolvePosUnitIds } from './helperServices.js';
 
 export const resolveNames = (user) => {
     if (!user) return null
-    return `${user.fname} ${user.middle_initial} ${user.lname}`
+    return `${user.fname || ''} ${user.middle_initial || ''} ${user.lname || ''}`
 }
 
 export const columnResolver = (taskId, subtaskId) => {
