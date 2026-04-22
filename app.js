@@ -67,7 +67,7 @@ app.all('/api/upload-to-drive', verifyToken, driveAPI)
 app.use('/design', verifyToken, designRoute)
 app.use('/users_info', usersInfoRoute)
 app.use('/office', verifyToken, posRoleRoute)
-app.use('/notifications', verifyToken, notifRoute)
+app.use('/notifications', notifRoute)
 app.use('/report', verifyToken, reportRoute)
 
 app.listen(PORT, () => {

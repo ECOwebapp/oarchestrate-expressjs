@@ -1,11 +1,12 @@
 import express from 'express'
+import { verifyToken } from '../middleware/verifyToken.js'
 import { resolvePosUnitIds, resolvePosUnitNames } from '../services/helperServices.js'
 import { resolveNames } from '../services/taskServices.js'
 const router = express.Router()
 
 const TOOU_ID = 3
 
-router.get('/fetch', async (req, res) => {
+router.get('/fetch', verifyToken, async (req, res) => {
     const uid = req.user.id
     if (!uid) return
     const results = []
@@ -251,7 +252,7 @@ router.get('/fetch', async (req, res) => {
     }
 })
 
-router.post('/mark_all_as_read', async (req, res) => {
+router.post('/mark_all_as_read', verifyToken, async (req, res) => {
     const { taskIds, pokeIds } = req.body
     const { isDirector, isUnitHead } = await resolvePosUnitIds(req.supabase, req.user.id, null)
     try {
@@ -285,7 +286,7 @@ router.post('/mark_all_as_read', async (req, res) => {
 let clients = [];
 
 // Endpoint for the Vue frontend to connect
-router.get('/events', (req, res) => {
+router.get('/events', verifyToken, (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
