@@ -43,14 +43,14 @@ router.get('/fetch', verifyToken, async (req, res) => {
             let nameMap = {}
 
             if (userIds.length) {
-                const { profRes } = await req.supabase.from('user_profile')
+                const { data: profRes, error: profError } = await req.supabase.from('user_profile')
                     .select('user_id, fname, middle_initial, lname')
                     .in('user_id', userIds)
 
-                if (profRes.error) console.error('[notifStore] user_profile error:', profRes.error)
+                if (profError) console.error('[notifStore] user_profile error:', profError)
 
                 nameMap = Object.fromEntries(
-                    (profRes.data || []).map(p => [p.user_id, resolveNames({
+                    (profRes || []).map(p => [p.user_id, resolveNames({
                         fname: p.fname,
                         lname: p.lname,
                         middle_initial: p.middle_initial
