@@ -203,8 +203,8 @@ router.get('/load_own_tasks', async (req, res) => {
     if (parentTaskIds.length) {
         const { data: subtasksData, error: subtasksError } = await req.supabase
             .from('task')
-            .select('id, parent_id, task_profile ( title, description )')
-            .in('parent_id', parentTaskIds)
+            .select('id, parent_task_id, task_profile ( title, description )')
+            .in('parent_task_id', parentTaskIds)
             .order('id')
 
         if (subtasksError) {
