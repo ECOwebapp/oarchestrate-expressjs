@@ -17,6 +17,8 @@ import reportRoute from './routes/accomplishment_report.js'
 const app = express();
 const PORT = 3000;
 
+// Add rate limiter next
+
 const allowedOrigins = [
   'http://localhost:5173', // Local Vue dev port
   'https://oarchestrate.vercel.app',

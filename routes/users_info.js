@@ -1,4 +1,5 @@
 import express from 'express'
+import {supabase} from '../lib/supabaseClient.js'
 import { fetchMembers } from '../services/memberServices.js'
 const router = express.Router()
 
@@ -53,7 +54,7 @@ router.get('/contact', async (req, res) => {
 // Genders
 router.get('/fetch_genders', async (req, res) => {
     try {
-        const { data, error } = await req.supabase
+        const { data, error } = await supabase
             .from('gender_type')
             .select('id, gender')
             .order('id')
