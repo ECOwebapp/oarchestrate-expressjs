@@ -191,7 +191,6 @@ router.get('/load_own_tasks', async (req, res) => {
       task_duration ( created, deadline ),
       task_output   ( link )
     `)
-        .is('parent_id', null)
         .eq('assignee', req.user.id)
 
     if (error) {
