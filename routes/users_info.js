@@ -1,10 +1,11 @@
 import express from 'express'
 import {supabase} from '../lib/supabaseClient.js'
+import { verifyToken } from '../middleware/verifyToken.js'
 import { fetchMembers } from '../services/memberServices.js'
 const router = express.Router()
 
 // Address
-router.get('/fetch_address', async (req, res) => {
+router.get('/fetch_address', verifyToken, async (req, res) => {
     const { userId } = req.query
     try {
         let query = req.supabase
@@ -23,7 +24,7 @@ router.get('/fetch_address', async (req, res) => {
 })
 
 // Contact
-router.get('/contact', async (req, res) => {
+router.get('/contact', verifyToken, async (req, res) => {
     // 1 for email, 2 for phone number
     const { type } = req.query
     try {
@@ -76,7 +77,7 @@ router.get('/fetch_genders', async (req, res) => {
 })
 
 // Member management
-router.get('/fetch_members', async (req, res) => {
+router.get('/fetch_members', verifyToken, async (req, res) => {
     try {
         const result = await fetchMembers(req.supabase)
         return res.status(200).json({ members: result })
@@ -86,7 +87,7 @@ router.get('/fetch_members', async (req, res) => {
     }
 })
 
-router.post('/remove_members', async (req, res) => {
+router.post('/remove_members', verifyToken, async (req, res) => {
     const { userId } = req.body
     try {
         const { error, status } = await req.supabase.functions.invoke('delete-user', {
@@ -104,7 +105,7 @@ router.post('/remove_members', async (req, res) => {
     }
 })
 
-router.post('/approve_user', async (req, res) => {
+router.post('/approve_user', verifyToken, async (req, res) => {
     const { userId } = req.body
     try {
         const { error } = await req.supabase
@@ -124,7 +125,7 @@ router.post('/approve_user', async (req, res) => {
     }
 })
 
-router.post('/deny_user', async (req, res) => {
+router.post('/deny_user', verifyToken, async (req, res) => {
     const { userId } = req.body
     try {
         const { error } = await req.supabase
