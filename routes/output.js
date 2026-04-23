@@ -10,20 +10,20 @@ const router = express.Router()
 router.post('/insert', async (req, res) => {
     const { taskId, subtaskId, link } = req.body
     const { idColumn, targetId } = columnResolver(taskId, subtaskId)
-
+	console.log(idColumn)
     try {
         const { data: outputRow, error: Err } = await req.supabase
-            .from('task_output').select('id, link').eq([idColumn], targetId).maybeSingle()
-        if(Err) throw new Error(Err.messae)
+            .from('task_output').select('id, link').eq(idColumn, targetId).maybeSingle()
+        if(Err) throw new Error('[outputRow]: ', Err.message)
 
         let insertQuery = req.supabase.from('task_output')
-        if(outputRow.id && !outputRow.link) {
-            insertQuery = insertQuery.update({ link: link }).eq([idColumn], targetId)
+        if(outputRow && outputRow.id && !outputRow.link) {
+            insertQuery = insertQuery.update({ link: link }).eq('id', outputRow.id)
         } else {
             insertQuery = insertQuery.insert({ [idColumn]: targetId, link: link })
         }
         const { data: updated, error: updErr } = await insertQuery.select()
-        if (updErr) throw new Error(updErr.message)
+        if (updErr) throw new Error('[updErr]: ', updErr.message)
 
         const taskRow = await selectAssigneeAssigner(req.supabase, taskId, subtaskId)
         const assigneeId = taskRow?.assignee || req.user.id
@@ -34,7 +34,7 @@ router.post('/insert', async (req, res) => {
         let filter = req.supabase
             .from('task_approval')
             .update({ unit_head: true })
-            .eq([idColumn], targetId)
+            .eq(idColumn, targetId)
 
         if (isSelfAssigned || isOfficeMember) {
             const { error } = await filter
@@ -59,12 +59,12 @@ router.post('/update', async (req, res) => {
     const selectQuery = req.supabase
         .from('task_output')
         .select('link')
-        .eq([idColumn], targetId);
+        .eq(idColumn, targetId);
 
     const updateQuery = req.supabase // Ensure you use req.supabase for both
         .from('task_output')
         .update({ link: newLink })
-        .eq([idColumn], targetId);
+        .eq(idColumn, targetId);
 
     try {
         const [
@@ -90,7 +90,7 @@ router.post('/update', async (req, res) => {
         await req.supabase
             .from('task_revision')
             .update({ is_read: true })
-            .eq([idColumn], targetId)
+            .eq(idColumn, targetId)
             .eq('is_read', false)
 
         // 5. Re-notify the reviewer with the updated file
@@ -126,12 +126,12 @@ router.post('/delete', async (req, res) => {
     const selectQuery = req.supabase
         .from('task_output')
         .select('link')
-        .eq([idColumn], targetId);
+        .eq(idColumn, targetId);
 
     const updateQuery = req.supabase // Ensure you use req.supabase for both
         .from('task_output')
         .update({ link: '' })
-        .eq([idColumn], targetId)
+        .eq(idColumn, targetId)
 
     try {
         // 1. Grab the current link so we can delete it from Drive
@@ -155,20 +155,20 @@ router.post('/delete', async (req, res) => {
             req.supabase
                 .from('task_approval')
                 .update({ unit_head: false, revision_comment: null, revised_at: null })
-                .eq([idColumn], targetId),
+                .eq(idColumn, targetId),
 
             // 5. Dismiss pending reviewer notifications
             req.supabase
                 .from('task_revision')
                 .update({ is_read: true })
-                .eq([idColumn], targetId)
+                .eq(idColumn, targetId)
                 .eq('is_read', false),
 
             // 6. Defensive: clear revision flag
             req.supabase
                 .from('task_profile')
                 .update({ revision: false })
-                .eq([idColumn], targetId)
+                .eq(idColumn, targetId)
         ])
 
         if (taskId) {
