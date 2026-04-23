@@ -5,7 +5,7 @@ export const verifyToken = async (req, res, next) => {
     const token = req.cookies.access_token
   
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    if (req.path === '/webhook') {
+    if (req.path === '/webhook' || req.method === 'OPTIONS') {
       return next();
   }
   
