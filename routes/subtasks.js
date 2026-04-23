@@ -128,7 +128,7 @@ router.post('/approve', async (req, res) => {
             .from('subtask')
             .select('design, assignee')
             .eq('id', subtaskId)
-
+	    .maybeSingle()
         if (!subtask) throw new Error('subtask not found')
 
         // Handle design subtask approvals
@@ -141,7 +141,7 @@ router.post('/approve', async (req, res) => {
             if (role === 6) {
                 designApprovalUpdate.senior_draftsman = true
                 approvalMessage = '✅ Design approved by Senior Draftsman — forwarded to Engineers.'
-            } else if (role.find(id => engineersId.has(id))) {
+            } else if (engineersId.has(role)) {
                 designApprovalUpdate.engineers = true
                 approvalMessage = '✅ Design approved by Engineer — forwarded to Unit Head.'
             } else if (role === 4) {

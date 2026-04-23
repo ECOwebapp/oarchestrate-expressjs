@@ -10,7 +10,7 @@ const router = express.Router()
 router.post('/insert', async (req, res) => {
     const { taskId, subtaskId, link } = req.body
     const { idColumn, targetId } = columnResolver(taskId, subtaskId)
-	console.log(idColumn)
+
     try {
         const { data: outputRow, error: Err } = await req.supabase
             .from('task_output').select('id, link').eq(idColumn, targetId).maybeSingle()
