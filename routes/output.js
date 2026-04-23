@@ -34,10 +34,7 @@ router.post('/insert', async (req, res) => {
         let filter = req.supabase
             .from('task_approval')
             .update({ unit_head: true })
-
-        filter = taskId
-            ? filter.eq([idColumn], targetId)
-            : filter.eq('subtask_id', subtaskId)
+            .eq([idColumn], targetId)
 
         if (isSelfAssigned || isOfficeMember) {
             const { error } = await filter
