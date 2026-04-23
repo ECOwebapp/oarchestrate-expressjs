@@ -40,6 +40,7 @@ app
       // if (!origin) return callback(null, true);
 
       const isAllowed = allowedOrigins.some(allowed => {
+	console.log("CORS REJECTED ORIGIN:", origin);
         return allowed instanceof RegExp ? allowed.test(origin) : allowed === origin;
       });
 
