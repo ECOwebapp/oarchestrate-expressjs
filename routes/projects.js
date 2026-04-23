@@ -15,7 +15,7 @@ router.get('/fetch', async (req, res) => {
                 : null,
         }))
 
-        return res.status(status || 200).json({ projects: projects })
+        return res.status(200).json({ projects: projects })
 
     } catch (err) {
         console.log('Error fetching PPAs: ', err.message)

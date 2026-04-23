@@ -46,6 +46,7 @@ app
       if (isAllowed) {
         callback(null, true);
       } else {
+	console.log("CORS REJECTED ORIGIN:", origin);
         callback(new Error('Not allowed by CORS'));
       }
     },
