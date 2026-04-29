@@ -139,29 +139,11 @@ export const fetchTasks = async (
   parentId = null,
 ) => {
   const { isDirector, isUnitHead } = await resolvePosUnitIds(supabase, userId);
-  const activeUnitHeadId = isUnitHead?.unit_id ?? null;
+  const activeUnitHeadId = isUnitHead?.unit_id || null;
 
   let query = supabase.from("task").select(SELECT_QUERY(false));
   if (parentId) query = query.eq("parent_ppa_id", Number(parentId));
   else if (taskId) query = query.eq("id", taskId);
-
-  if (!isDirector) {
-    if (isUnitHead) {
-      // Unit Head: Sees their own tasks + anyone in their unit
-      const { data: unitMembers } = await supabase
-        .from("position")
-        .select("user_id")
-        .eq("unit_id", activeUnitHeadId);
-
-      const allowedIds = [
-        ...new Set([userId, ...(unitMembers?.map((m) => m.user_id) || [])]),
-      ];
-      query = query.in("assignee", allowedIds);
-    } else {
-      // Regular Member: ONLY sees tasks assigned to them
-      query = query.eq("assignee", userId);
-    }
-  }
 
   const { data: tasks, error } = await query.order("id", { ascending: false });
   if (error) throw error;
