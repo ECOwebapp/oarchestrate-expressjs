@@ -378,6 +378,7 @@ router.post("/mark_all_as_read", verifyToken, async (req, res) => {
     // they are individually marked read only when approved/denied
     let query = [];
     if (taskIds.length) {
+      const idString = taskIds.map((id) => parseInt(id)).join(",");
       const col = isDirector
         ? "read_by_director"
         : isUnitHead
@@ -387,7 +388,7 @@ router.post("/mark_all_as_read", verifyToken, async (req, res) => {
         req.supabase
           .from("task_notif")
           .update({ [col]: true })
-          .in("task_id", taskIds),
+          .or(`task_id.in.(${idString}),subtask_id.in.(${idString})`),
       );
     }
     if (pokeIds.length) {
@@ -403,7 +404,7 @@ router.post("/mark_all_as_read", verifyToken, async (req, res) => {
     if (taskNotif?.error) throw taskNotif?.error;
     if (taskPoke?.error) throw taskPoke?.error;
 
-    return res.status(201);
+    return res.status(201 || taskNotif.status);
   } catch (e) {
     console.error("[notifStore] markAllRead error:", e);
     return res.status(500).json({ error: e.message });
