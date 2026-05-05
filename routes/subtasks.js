@@ -9,7 +9,7 @@ import { _notifySubmission } from "../services/notificationServices.js";
 const router = express.Router();
 
 router.get("/fetch", async (req, res) => {
-  const { subtaskId, parentId } = req.query;
+  const { subtaskId, parentId, design } = req.query;
 
   try {
     const formattedSubtasks = await fetchSubtasks(
@@ -17,6 +17,7 @@ router.get("/fetch", async (req, res) => {
       req.user.id,
       subtaskId,
       parentId,
+      design,
     );
     return res
       .status(200)

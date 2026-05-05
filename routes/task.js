@@ -10,7 +10,7 @@ const router = express.Router();
 
 // Tasks that are children of a PPA
 router.get("/fetch", async (req, res) => {
-  const { taskId, parentId } = req.query;
+  const { taskId, parentId, insertion } = req.query;
 
   try {
     const formattedTasks = await fetchTasks(
@@ -18,6 +18,7 @@ router.get("/fetch", async (req, res) => {
       req.user.id,
       taskId,
       parentId,
+      insertion,
     );
     return res.status(200).json(taskId ? formattedTasks[0] : formattedTasks);
   } catch (e) {
@@ -93,7 +94,6 @@ router.post("/upsert", async (req, res) => {
       parent_ppa_id: mainTask.parentId,
       assigner: mainTask.assignee ? req.user.id : null,
       assignee: mainTask.assignee ? assigneeId : null,
-      design: !!mainTask.design,
     };
     if (mainTask.id) taskData.id = mainTask.id;
 
@@ -237,11 +237,9 @@ router.post("/delete", async (req, res) => {
 
       // Optional: If you want to block the whole operation if even ONE ID is unauthorized:
       if (allowedIds.length !== taskIds.length)
-        return res
-          .status(403)
-          .json({
-            error: "Unauthorized: Some tasks were not assigned by you.",
-          });
+        return res.status(403).json({
+          error: "Unauthorized: Some tasks were not assigned by you.",
+        });
     }
 
     let result;
@@ -486,17 +484,15 @@ router.post("/resubmit", async (req, res) => {
           is_read: false,
         });
       }
-      await req.supabase
-        .from("task_notif")
-        .upsert(
-          {
-            task_id: taskId,
-            read_by_director: false,
-            read_by_assignee: true,
-            read_by_unit_head: true,
-          },
-          { onConflict: "task_id" },
-        );
+      await req.supabase.from("task_notif").upsert(
+        {
+          task_id: taskId,
+          read_by_director: false,
+          read_by_assignee: true,
+          read_by_unit_head: true,
+        },
+        { onConflict: "task_id" },
+      );
     } else {
       const { isOfficeMember } = await resolvePosUnitIds(
         req.supabase,

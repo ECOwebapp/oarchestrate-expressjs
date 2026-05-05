@@ -24,7 +24,7 @@ const SELECT_QUERY = (isSubtask = false) => {
         id, parent_task_id, parent_subtask_id, assigner, assignee, design,
         assignee_profile:user_profile!subtask_assignee_fkey (${PROFILE_FIELDS}),
         assigner_profile:user_profile!subtask_assigner_fkey (${PROFILE_FIELDS}),
-        task_profile!subtask_id (${TASK_INFO}),
+        task_profile!subtask_id!inner (${TASK_INFO}),
         task_approval!subtask_id (${APPROVAL}),
         task_duration!subtask_id (${DURATION}),
         task_output!subtask_id (${OUTPUT}),
@@ -35,10 +35,10 @@ const SELECT_QUERY = (isSubtask = false) => {
       .trim();
   } else {
     return `
-        id, parent_ppa_id, assigner, assignee, design,
+        id, parent_ppa_id, assigner, assignee,
         assignee_profile:user_profile!task_assignee_fkey1 (${PROFILE_FIELDS}),
         assigner_profile:user_profile!task_assigner_fkey1 (${PROFILE_FIELDS}),
-        task_profile(${TASK_INFO}),
+        task_profile!inner(${TASK_INFO}),
         task_approval(${APPROVAL}),
         task_duration(${DURATION}),
         task_output(${OUTPUT})
@@ -97,7 +97,6 @@ const formatRow = (t, activeUnitHeadId, userId, isSubtask = false) => {
       const diff = new Date() - dl;
       return diff > 0 ? Math.ceil(diff / 86400000) : 0;
     })(),
-    design: !!t.design,
     isSelfAssigned: t.assigner === t.assignee,
     assigneeRole: roles.includes(4)
       ? 4
@@ -110,7 +109,10 @@ const formatRow = (t, activeUnitHeadId, userId, isSubtask = false) => {
   };
 
   // Add subtask-specific field if needed
-  if (isSubtask) base.designApproval = t.design_approval || {};
+  if (isSubtask) {
+    base.design = !!t.design;
+    base.designApproval = t.design_approval || {};
+  }
 
   return base;
 };
@@ -137,14 +139,18 @@ export const fetchTasks = async (
   userId,
   taskId = null,
   parentId = null,
+  insertion = false,
 ) => {
   const { isDirector, isUnitHead } = await resolvePosUnitIds(supabase, userId);
   const activeUnitHeadId = isUnitHead?.unit_id || null;
 
   let query = supabase.from("task").select(SELECT_QUERY(false));
   if (parentId) query = query.eq("parent_ppa_id", Number(parentId));
-  else if (taskId) query = query.eq("id", taskId);
-
+  else if (taskId) query = query.eq("id", Number(taskId));
+  else if (insertion) {
+    if (!isDirector) query = query.eq("assignee", userId);
+    query = query.eq("task_profile.task_type", 2);
+  }
   const { data: tasks, error } = await query.order("id", { ascending: false });
   if (error) throw error;
 
@@ -156,6 +162,7 @@ export const fetchSubtasks = async (
   userId,
   subtaskId = null,
   parentId = null,
+  design = false,
 ) => {
   // 1. Get Requester Metadata
   const { isDirector, isUnitHead } = await resolvePosUnitIds(
@@ -168,6 +175,7 @@ export const fetchSubtasks = async (
   let query = supabase.from("subtask").select(SELECT_QUERY(true));
   if (parentId) query = query.eq("parent_task_id", Number(parentId));
   else if (subtaskId) query = query.eq("id", subtaskId);
+  else if (design) query = query.eq("design", design);
 
   let subtaskRows = [];
 
