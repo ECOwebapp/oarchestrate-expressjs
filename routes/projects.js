@@ -10,14 +10,22 @@ router.get("/fetch", async (req, res) => {
     } = await req.supabase.rpc("get_ppa", { user_uuid: req.user.id });
     if (projectErr) throw new Error(projectErr);
 
-    const projects = (projectRes || []).map((p) => ({
-      ...p,
-      director: p.director
-        ? `${p.director.fname}
+    const isInsertionProject = (item) =>
+      item.type?.toLowerCase() === "insertion" ||
+      item.typeId === 2 ||
+      item.isInsertion === true ||
+      item.is_insertion === true;
+
+    const projects = (projectRes || [])
+      .filter((p) => p.is_involved !== false && !isInsertionProject(p))
+      .map((p) => ({
+        ...p,
+        director: p.director
+          ? `${p.director.fname}
                     ${p.director.middle_initial !== null ? p.director.middle_initial : ""}
                     ${p.director.lname}`
-        : null,
-    }));
+          : null,
+      }));
 
     return res.status(200).json({ projects: projects });
   } catch (err) {
