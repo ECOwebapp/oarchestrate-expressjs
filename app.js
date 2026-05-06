@@ -1,29 +1,30 @@
-import 'dotenv/config'
-import express from 'express';
-import cors from 'cors'
-import cookieParser from 'cookie-parser';
-import { verifyToken } from './middleware/verifyToken.js';
-import authRoute from './routes/auth.js'
-import profileRoute from './routes/profile.js'
-import projectRoute from './routes/projects.js'
-import taskRoute from './routes/task.js'
-import subtaskRoute from './routes/subtasks.js'
-import outputRoute from './routes/output.js'
-import driveAPI from './middleware/upload-to-drive.js'
-import designRoute from './routes/design.js'
-import usersInfoRoute from './routes/users_info.js'
-import posRoleRoute from './routes/positions.js'
-import notifRoute from './routes/notifications.js'
-import reportRoute from './routes/accomplishment_report.js'
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import { verifyToken } from "./middleware/verifyToken.js";
+import authRoute from "./routes/auth.js";
+import profileRoute from "./routes/profile.js";
+import projectRoute from "./routes/projects.js";
+import taskRoute from "./routes/task.js";
+import subtaskRoute from "./routes/subtasks.js";
+import outputRoute from "./routes/output.js";
+import driveAPI from "./middleware/upload-to-drive.js";
+import designRoute from "./routes/design.js";
+import usersInfoRoute from "./routes/users_info.js";
+import posRoleRoute from "./routes/positions.js";
+import notifRoute from "./routes/notifications.js";
+import reportRoute from "./routes/accomplishment_report.js";
+import dashboardRoute from "./routes/dashboardRoute.js";
 const app = express();
 const PORT = 3000;
 
 // Add rate limiter next
 
 const allowedOrigins = [
-  'http://localhost:5173', // Local Vue dev port
-  'https://oarchestrate.vercel.app',
-  /\.vercel\.app$/ // This regex allows all Vercel preview deployments
+  "http://localhost:5173", // Local Vue dev port
+  "https://oarchestrate.vercel.app",
+  /\.vercel\.app$/, // This regex allows all Vercel preview deployments
 ];
 
 // app.use((req, res, next) => {
@@ -34,44 +35,49 @@ const allowedOrigins = [
 // });
 
 app
-  .use(cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl)
-      // if (!origin) return callback(null, true);
+  .use(
+    cors({
+      origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl)
+        // if (!origin) return callback(null, true);
 
-      const isAllowed = allowedOrigins.some(allowed => {
-        return allowed instanceof RegExp ? allowed.test(origin) : allowed === origin;
-      });
+        const isAllowed = allowedOrigins.some((allowed) => {
+          return allowed instanceof RegExp
+            ? allowed.test(origin)
+            : allowed === origin;
+        });
 
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-	console.log("CORS REJECTED ORIGIN:", origin);
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
-  }))
+        if (isAllowed) {
+          callback(null, true);
+        } else {
+          console.log("CORS REJECTED ORIGIN:", origin);
+          callback(new Error("Not allowed by CORS"));
+        }
+      },
+      credentials: true,
+      methods: ["GET", "POST", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
+    }),
+  )
   .use(cookieParser())
-  .use(express.json({ limit: '3mb' }))
-  .use(express.urlencoded({ limit: '3mb', extended: true }))
+  .use(express.json({ limit: "3mb" }))
+  .use(express.urlencoded({ limit: "3mb", extended: true }))
 
-// Use verifyToken for actions that requires user authentication
+  // Use verifyToken for actions that requires user authentication
 
-  .use('/auth', authRoute)
-  .use('/users_info', usersInfoRoute)
-  .use('/profile', verifyToken, profileRoute)
-  .use('/ppa', verifyToken, projectRoute)
-  .use('/tasks', verifyToken, taskRoute)
-  .use('/subtasks', verifyToken, subtaskRoute)
-  .use('/output', verifyToken, outputRoute)
-  .all('/api/upload-to-drive', verifyToken, driveAPI)
-  .use('/design', verifyToken, designRoute)
-  .use('/office', verifyToken, posRoleRoute)
-  .use('/notifications', notifRoute)
-  .use('/report', verifyToken, reportRoute)
+  .use("/auth", authRoute)
+  .use("/users_info", usersInfoRoute)
+  .use("/profile", verifyToken, profileRoute)
+  .use("/ppa", verifyToken, projectRoute)
+  .use("/tasks", verifyToken, taskRoute)
+  .use("/subtasks", verifyToken, subtaskRoute)
+  .use("/output", verifyToken, outputRoute)
+  .all("/api/upload-to-drive", verifyToken, driveAPI)
+  .use("/design", verifyToken, designRoute)
+  .use("/office", verifyToken, posRoleRoute)
+  .use("/notifications", notifRoute)
+  .use("/report", verifyToken, reportRoute)
+  .use("/dashboard", verifyToken, dashboardRoute)
   .listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
-});
+    console.log(`Server is running at http://localhost:${PORT}`);
+  });

@@ -75,7 +75,7 @@ const formatRow = (t, activeUnitHeadId, userId, isSubtask = false) => {
     to: t.task_duration?.deadline || null,
     startDate: t.task_duration?.created || null,
     endDate: t.task_duration?.deadline || null,
-    outputLink: t.task_output?.link ?? "",
+    outputLink: t.task_output?.link || "",
     unitHead: !!t.task_approval?.unit_head,
     director: !!t.task_approval?.director,
     revisionComment: t.task_approval?.revision_comment || "",
@@ -112,6 +112,7 @@ const formatRow = (t, activeUnitHeadId, userId, isSubtask = false) => {
   if (isSubtask) {
     base.design = !!t.design;
     base.designApproval = t.design_approval || {};
+    base.isSubtask = isSubtask;
   }
 
   return base;
@@ -226,4 +227,156 @@ export const fetchSubtasks = async (
   // 3. Final Mapping
   // Pass the requester's ID to mapRow to handle 'isOwnTask' logic on the server
   return subtaskRows.map((st) => formatRow(st, activeUnitHeadId, userId, true));
+};
+
+/* Dashboard tasks */
+export const processDashboardTasks = (
+  tasks,
+  auth,
+  selectedMonth,
+  selectedYear,
+  CIRC,
+) => {
+  if (!tasks || !Array.isArray(tasks)) return {};
+
+  // ── Filtered tasks for current month ──
+  const forMonth = (list) =>
+    list.filter((t) => {
+      if (!t.from) return false;
+      const d = new Date(t.from);
+      return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+    });
+
+  // -----------------------------------------
+  // DIRECTOR LOGIC
+  // -----------------------------------------
+  const directorPending = tasks.filter((t) => !t.director);
+  const directorMonth = forMonth(directorPending); // Evaluated immediately
+
+  const directorRegular = directorMonth
+    .filter((t) => t.typeId !== 2 && t.outputLink)
+    .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+
+  const directorInsertion = directorMonth
+    .filter((t) => t.typeId === 2)
+    .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+
+  // Pre-calculate counts for the donut to avoid redundant filtering
+  const dirRegCount = directorMonth.filter(
+    (t) => t.typeId !== 2 && !t.urgent && t.outputLink,
+  ).length;
+  const dirUrgCount = directorMonth.filter((t) => t.urgent).length;
+  const dirInsCount = directorMonth.filter((t) => t.typeId === 2).length;
+  const dirTotal = dirRegCount + dirUrgCount + dirInsCount || 1;
+
+  let dirOffset = 0;
+  const directorDonut = [
+    { value: dirRegCount, color: "#15803d", label: "Regular" },
+    { value: dirUrgCount, color: "#b91c1c", label: "Urgent" },
+    { value: dirInsCount, color: "#b45309", label: "Insertion" },
+  ].map((s) => {
+    const len = CIRC * (s.value / dirTotal); // FIXED: s.value
+    const seg = { ...s, len, offset: -dirOffset };
+    dirOffset += len;
+    return seg;
+  });
+
+  // -----------------------------------------
+  // UNIT HEAD LOGIC
+  // -----------------------------------------
+  const uhPending = tasks.filter(
+    (t) => !t.isOwnTask && !t.unitHead && !t.director,
+  );
+  const uhOwn = tasks.filter((t) => t.isOwnTask);
+  const uhMonth = forMonth(uhPending);
+
+  const uhRegular = uhMonth
+    .filter((t) => t.typeId !== 2 && t.outputLink)
+    .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+
+  const uhInsertion = uhMonth
+    .filter((t) => t.typeId === 2)
+    .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+
+  const uhRegCount = uhMonth.filter(
+    (t) => t.typeId !== 2 && !t.urgent && t.outputLink,
+  ).length;
+  const uhUrgCount = uhMonth.filter((t) => t.urgent).length;
+  const uhInsCount = uhMonth.filter((t) => t.typeId === 2).length;
+  const uhTotal = uhRegCount + uhUrgCount + uhInsCount || 1;
+
+  let uhOffset = 0;
+  const uhDonut = [
+    { value: uhRegCount, color: "#15803d", label: "Regular" },
+    { value: uhUrgCount, color: "#b91c1c", label: "Urgent" },
+    { value: uhInsCount, color: "#b45309", label: "Insertion" },
+  ].map((s) => {
+    const len = CIRC * (s.value / uhTotal); // FIXED: s.value
+    const seg = { ...s, len, offset: -uhOffset };
+    uhOffset += len;
+    return seg;
+  });
+
+  // -----------------------------------------
+  // MEMBER LOGIC
+  // -----------------------------------------
+  const memberRegular = tasks
+    .filter((t) => t.typeId !== 2)
+    .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+
+  const memberInsertion = tasks
+    .filter((t) => t.typeId === 2 && !t.design)
+    .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+
+  const memberRevisions = tasks.filter((t) => t.revision && !t.director);
+
+  const memAppCount = tasks.filter((t) => t.director).length;
+  const memSubCount = tasks.filter(
+    (t) => (t.outputLink && !t.director) || t.design,
+  ).length;
+  const memPenCount = tasks.filter(
+    (t) => !t.outputLink && !t.director && !t.design,
+  ).length;
+  const memTotal = memAppCount + memSubCount + memPenCount || 1;
+
+  let memOffset = 0;
+  const memberDonut = [
+    { value: memAppCount, color: "#15803d", label: "Approved" },
+    { value: memSubCount, color: "#b45309", label: "Submitted" },
+    { value: memPenCount, color: "#9ca3af", label: "Pending" },
+  ].map((s) => {
+    const len = CIRC * (s.value / memTotal); // FIXED: s.value
+    const seg = { ...s, len, offset: -memOffset };
+    memOffset += len;
+    return seg;
+  });
+
+  // -----------------------------------------
+  // FINAL EXPORT BASED ON ROLE
+  // -----------------------------------------
+  return {
+    activeDonut: auth.isDirector
+      ? directorDonut
+      : auth.isUnitHead
+        ? uhDonut
+        : memberDonut,
+    activePending: auth.isDirector
+      ? directorMonth
+      : auth.isUnitHead
+        ? uhMonth
+        : tasks,
+    activeRegular: auth.isDirector
+      ? directorRegular
+      : auth.isUnitHead
+        ? uhRegular
+        : memberRegular,
+    activeInsertion: auth.isDirector
+      ? directorInsertion
+      : auth.isUnitHead
+        ? uhInsertion
+        : memberInsertion,
+    uhOwn: auth.isUnitHead ? uhOwn : null,
+    memberRevisions:
+      !auth.isDirector && !auth.isUnitHead ? memberRevisions : null,
+  };
 };
