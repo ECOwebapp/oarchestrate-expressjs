@@ -238,7 +238,7 @@ router.post("/approve", async (req, res) => {
   try {
     const { data: task } = await req.supabase
       .from("task")
-      .select("design, assignee")
+      .select("assignee")
       .eq("id", taskId);
 
     if (!task) throw new Error("Task not found");
@@ -302,8 +302,6 @@ router.get("/fetch_revisions", async (req, res) => {
         .in("id", unread);
     }
 
-    console.log(revisionData);
-
     const result = (revisionData || []).map((r) => {
       // 1. Handle the nested comment array from Supabase
       // If using a relationship, r.comments will be an array [ { message: "..." } ]
@@ -328,6 +326,7 @@ router.get("/fetch_revisions", async (req, res) => {
 
 router.post("/revision_request", async (req, res) => {
   const { taskId, comment, role, parentId } = req.body;
+  if (!comment) throw new Error("No comments?");
 
   try {
     const { data: task } = await req.supabase

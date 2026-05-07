@@ -252,7 +252,9 @@ export const fetchSubtasks = async (
   );
 };
 
-/* Dashboard tasks */
+//---------------------------------
+// DASHBOARD TASKS
+// --------------------------------
 export const processDashboardTasks = (
   tasks,
   auth,
@@ -270,9 +272,7 @@ export const processDashboardTasks = (
       return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
     });
 
-  // -----------------------------------------
-  // DIRECTOR LOGIC
-  // -----------------------------------------
+  /* DIRECTOR LOGIC */
   const directorPending = tasks.filter((t) => !t.director);
   const directorMonth = forMonth(directorPending); // Evaluated immediately
 
@@ -304,9 +304,7 @@ export const processDashboardTasks = (
     return seg;
   });
 
-  // -----------------------------------------
-  // UNIT HEAD LOGIC
-  // -----------------------------------------
+  /* UNIT HEAD LOGIC */
   const uhPending = tasks.filter(
     (t) => !t.isOwnTask && !t.unitHead && !t.director,
   );
@@ -340,9 +338,7 @@ export const processDashboardTasks = (
     return seg;
   });
 
-  // -----------------------------------------
-  // MEMBER LOGIC
-  // -----------------------------------------
+  /* MEMBER LOGIC */
   const memberRegular = tasks
     .filter((t) => t.typeId !== 2)
     .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
@@ -374,9 +370,7 @@ export const processDashboardTasks = (
     return seg;
   });
 
-  // -----------------------------------------
-  // FINAL EXPORT BASED ON ROLE
-  // -----------------------------------------
+  /* FINAL EXPORT */
   return {
     activeDonut: auth.isDirector
       ? directorDonut
