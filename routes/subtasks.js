@@ -264,12 +264,12 @@ router.post("/approve", async (req, res) => {
 });
 
 router.post("/resubmit", async (req, res) => {
-  const { subtaskId, newOutputLink, parentId } = req.body;
+  const { subtaskId, newOutputLink, comment, parentId } = req.body;
 
   try {
     const { data: subtask } = await req.supabase
       .from("subtask")
-      .select("assignee")
+      .select("id, assignee")
       .eq("id", subtaskId)
       .maybeSingle();
 
@@ -290,10 +290,13 @@ router.post("/resubmit", async (req, res) => {
       }
     }
 
-    const [lastRevision, taskProfileUpdate] = await Promise.all([
+    // F this line after hours of searching --Hexer
+    //        ||
+    //        \/
+    const [{ data: lastRevision }, taskProfileUpdate] = await Promise.all([
       req.supabase
         .from("task_revision")
-        .select("role, from_user")
+        .select("id, role, from_user")
         .eq("subtask_id", subtaskId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -310,6 +313,7 @@ router.post("/resubmit", async (req, res) => {
 
     let dbQueries = [];
     if (revisorRole === 1) {
+      console.log("This line was executed");
       dbQueries.push(
         req.supabase
           .from("task_approval")
@@ -323,13 +327,17 @@ router.post("/resubmit", async (req, res) => {
 
       if (lastRevision?.from_user) {
         dbQueries.push(
-          req.supabase.from("task_revision").insert({
-            subtask_id: subtaskId,
-            from_user: req.user.id,
-            to_user: lastRevision.from_user,
-            role: 1,
-            is_read: false,
-          }),
+          req.supabase
+            .from("task_revision")
+            .insert({
+              subtask_id: subtaskId,
+              from_user: req.user.id,
+              to_user: lastRevision.from_user,
+              role: 1,
+              is_read: false,
+            })
+            .select("id")
+            .maybeSingle(),
         );
       }
       dbQueries.push(
@@ -379,7 +387,21 @@ router.post("/resubmit", async (req, res) => {
             .eq("subtask_id", subtaskId),
         );
       }
-
+      if (lastRevision?.from_user) {
+        dbQueries.push(
+          req.supabase
+            .from("task_revision")
+            .insert({
+              subtask_id: subtaskId,
+              from_user: req.user.id,
+              to_user: lastRevision.from_user,
+              role: 4,
+              is_read: false,
+            })
+            .select("id")
+            .maybeSingle(),
+        );
+      }
       dbQueries.push(
         _notifySubmission(
           req.supabase,
@@ -393,10 +415,18 @@ router.post("/resubmit", async (req, res) => {
       );
     }
 
-    // Need to be tested.
-    // In theory, running these queries at the same time is better
-    // than running them in sequential since these queries does not return data.
-    await Promise.all(dbQueries);
+    const [taskApp, taskRev, taskNotif] = await Promise.all(dbQueries);
+    if (taskRev) {
+      const { error: commentErr } = await req.supabase
+        .from("comment_section")
+        .insert({
+          user_id: req.user.id,
+          subtask_id: subtask.id,
+          message: comment,
+          revision_id: taskRev?.data?.id,
+        });
+      if (commentErr) throw commentErr;
+    } else throw taskRev.error;
     const formattedSubtasks = await fetchSubtasks(
       req.supabase,
       req.user.id,
@@ -489,43 +519,29 @@ router.post("/delete", async (req, res) => {
 router.get("/fetch_revisions", async (req, res) => {
   const { subtaskId } = req.query;
   try {
-    const [{ data: revisionData }, { data: commentData }] = await Promise.all([
-      req.supabase
-        .from("task_revision")
-        .select(
-          `
+    const { data: revisionData } = await req.supabase
+      .from("task_revision")
+      .select(
+        `
           id,
           subtask_id,
           from_user,
-          fromName:user_id!task_revision_from_user_fkey(
+          fromName:user_profile!task_revision_from_user_fkey(
             fname,
             lname,
             middle_initial
           ),
           to_user,
           role,
+          comment:comment_section!comment_section_revision_id_fkey(message)
           is_read,
           created_at
           `,
-        )
-        .eq("subtask_id", subtaskId)
-        .order("created_at", { ascending: true }),
-      req.supabase
-        .from("comment_section")
-        .select(`id, user_id, subtask_id, message`)
-        .eq("subtask_id", subtaskId),
-    ]);
+      )
+      .eq("subtask_id", subtaskId)
+      .order("created_at", { ascending: true });
 
-    const result = (revisionData || []).map((r) => {
-      return {
-        ...r,
-        comments: (commentData || []).filter(
-          (c) => c.subtask_id === r.subtask_id,
-        ),
-      };
-    });
-
-    const unread = (result || [])
+    const unread = (revisionData || [])
       .filter((r) => r.to_user === req.user.id && !r.is_read)
       .map((r) => r.id);
     if (unread.length) {
@@ -535,14 +551,22 @@ router.get("/fetch_revisions", async (req, res) => {
         .in("id", unread);
     }
 
-    console.log(result);
+    const result = (revisionData || []).map((r) => {
+      // 1. Handle the nested comment array from Supabase
+      // If using a relationship, r.comments will be an array [ { message: "..." } ]
+      const commentObj = Array.isArray(r.comment) ? r.comment[0] : r.comment;
 
-    return res.status(200).json(
-      (result || []).map((r) => ({
+      return {
         ...r,
-        fromName: resolveNames[r.fromName],
-      })),
-    );
+        // Use optional chaining to prevent crashes if message is missing
+        comment: commentObj?.message,
+
+        // 2. Resolve the name string
+        fromName: resolveNames(r.fromName),
+      };
+    });
+
+    return res.status(200).json(result);
   } catch (err) {
     console.log("Error fetching revisions: ", err.message);
     return res.status(500).json({ error: err.message });
@@ -556,7 +580,8 @@ router.post("/revision_request", async (req, res) => {
     const { data: subtask } = await req.supabase
       .from("subtask")
       .select("design, assignee")
-      .eq("id", subtaskId);
+      .eq("id", subtaskId)
+      .maybeSingle();
 
     if (!subtask) throw new Error("Subtask not found");
 
@@ -580,24 +605,33 @@ router.post("/revision_request", async (req, res) => {
         designResetCols.engineers = false;
       }
 
-      await Promise.all([
+      const [taskProf, taskRev] = await Promise.all([
         req.supabase
           .from("task_profile")
           .update({ revision: true })
           .eq("subtask_id", subtaskId),
-        req.supabase.from("task_revision").insert({
-          subtask_id: subtaskId,
-          from_user: req.user.id,
-          to_user: subtask.assignee,
-          role,
-          is_read: false,
-        }),
-        req.supabase.from("comment_section").insert({
+        req.supabase
+          .from("task_revision")
+          .insert({
+            subtask_id: subtaskId,
+            from_user: req.user.id,
+            to_user: subtask.assignee, // null
+            role,
+            is_read: false,
+          })
+          .select("id"),
+      ]);
+
+      const { error: commentErr } = await req.supabase
+        .from("comment_section")
+        .insert({
           user_id: req.user.id,
           subtask_id: subtaskId,
           message: comment,
-        }),
-      ]);
+          revision_id: taskRev.data.id,
+        });
+
+      if (commentErr) throw commentErr;
     } else {
       // Regular subtask revision logic
       const resetCols =
@@ -612,7 +646,7 @@ router.post("/revision_request", async (req, res) => {
               revised_at: new Date().toISOString(),
             };
 
-      await Promise.all([
+      const [taskApp, taskProf, taskRev] = await Promise.all([
         req.supabase
           .from("task_approval")
           .update(resetCols)
@@ -621,19 +655,30 @@ router.post("/revision_request", async (req, res) => {
           .from("task_profile")
           .update({ revision: true })
           .eq("subtask_id", subtaskId),
-        req.supabase.from("task_revision").insert({
-          subtask_id: subtaskId,
-          from_user: req.user.id,
-          to_user: subtask.assignee,
-          role,
-          is_read: false,
-        }),
-        req.supabase.from("comment_section").insert({
+        req.supabase
+          .from("task_revision")
+          .insert({
+            subtask_id: subtaskId,
+            from_user: req.user.id,
+            to_user: subtask.assignee, // null
+            role,
+            is_read: false,
+          })
+          .select("id")
+          .maybeSingle(),
+      ]);
+
+      const { error: commentErr } = await req.supabase
+        .from("comment_section")
+        .insert({
           user_id: req.user.id,
           subtask_id: subtaskId,
           message: comment,
-        }),
-      ]);
+          revision_id: taskRev.data.id,
+        });
+
+      if (taskRev.error) throw taskRev.error;
+      if (commentErr) throw commentErr;
     }
 
     const formattedSubtasks = await fetchSubtasks(
