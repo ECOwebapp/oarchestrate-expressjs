@@ -313,7 +313,6 @@ router.post("/resubmit", async (req, res) => {
 
     let dbQueries = [];
     if (revisorRole === 1) {
-      console.log("This line was executed");
       dbQueries.push(
         req.supabase
           .from("task_approval")

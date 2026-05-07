@@ -29,41 +29,29 @@ router.get("/fetch", async (req, res) => {
 router.get("/fetch_revisions", async (req, res) => {
   const { taskId } = req.query;
   try {
-    const [{ data: revisionData }, { data: commentData }] = await Promise.all([
-      req.supabase
-        .from("task_revision")
-        .select(
-          `
+    const { data: revisionData } = await req.supabase
+      .from("task_revision")
+      .select(
+        `
           id,
           task_id,
           from_user,
-          fromName:user_id!task_revision_from_user_fkey(
+          fromName:user_profile!task_revision_from_user_fkey(
             fname,
             lname,
             middle_initial
           ),
           to_user,
           role,
+          comment:comment_section!comment_section_revision_id_fkey(message)
           is_read,
           created_at
           `,
-        )
-        .eq("task_id", taskId)
-        .order("created_at", { ascending: true }),
-      req.supabase
-        .from("comment_section")
-        .select(`id, user_id, task_id, message`)
-        .eq("task_id", taskId),
-    ]);
+      )
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true });
 
-    const data = (revisionData || []).map((r) => {
-      return {
-        ...r,
-        comments: (commentData || []).filter((c) => c.task_id === r.task_id),
-      };
-    });
-
-    const unread = (data || [])
+    const unread = (revisionData || [])
       .filter((r) => r.to_user === req.user.id && !r.is_read)
       .map((r) => r.id);
     if (unread.length) {
@@ -73,12 +61,22 @@ router.get("/fetch_revisions", async (req, res) => {
         .in("id", unread);
     }
 
-    return res.status(200).json(
-      (data || []).map((r) => ({
+    const result = (revisionData || []).map((r) => {
+      // 1. Handle the nested comment array from Supabase
+      // If using a relationship, r.comments will be an array [ { message: "..." } ]
+      const commentObj = Array.isArray(r.comment) ? r.comment[0] : r.comment;
+
+      return {
         ...r,
-        fromName: resolveNames[r.fromName],
-      })),
-    );
+        // Use optional chaining to prevent crashes if message is missing
+        comment: commentObj?.message,
+
+        // 2. Resolve the name string
+        fromName: resolveNames(r.fromName),
+      };
+    });
+
+    return res.status(200).json(result);
   } catch (err) {
     console.log("Error fetching revisions: ", err.message);
     return res.status(500).json({ error: err.message });
@@ -304,27 +302,12 @@ router.post("/approve", async (req, res) => {
 
     // Handle regular task approvals
     const col = role === 1 ? "director" : "unit_head";
-    const [{ error: updateErr }, { error: revisionErr }] = await Promise.all([
-      req.supabase
-        .from("task_approval")
-        .update({ [col]: true, revised_at: null })
-        .eq("task_id", taskId),
-
-      // req.supabase.from("task_revision").insert({
-      //   task_id: taskId,
-      //   from_user: req.user.id,
-      //   to_user: task.assignee,
-      //   role,
-      //   comment:
-      //     role === 1
-      //       ? "✅ Task fully approved by Director."
-      //       : "✅ Task approved by Unit Head — forwarded to Director.",
-      //   is_read: false,
-      // }),
-    ]);
+    const { error: updateErr } = await req.supabase
+      .from("task_approval")
+      .update({ [col]: true, revised_at: null })
+      .eq("task_id", taskId);
 
     if (updateErr) throw new Error(updateErr.message);
-    if (revisionErr) throw new Error(revisionErr.message);
 
     const formattedTasks = await fetchTasks(
       req.supabase,
@@ -345,78 +328,57 @@ router.post("/revision_request", async (req, res) => {
   try {
     const { data: task } = await req.supabase
       .from("task")
-      .select("design, assignee")
-      .eq("id", taskId);
+      .select("assignee")
+      .eq("id", taskId)
+      .maybeSingle();
 
     if (!task) throw new Error("Task not found");
 
-    if (task.design) {
-      // For design tasks, reset the relevant approval flag based on the role
-      const designResetCols = {};
-      const engineersId = new Set([13, 14, 15, 16, 18, 19]);
+    // Regular task revision logic
+    const resetCols =
+      role === 1
+        ? {
+            unit_head: false,
+            director: false,
+            revised_at: new Date().toISOString(),
+          }
+        : {
+            unit_head: false,
+            revised_at: new Date().toISOString(),
+          };
 
-      if (role === 1) {
-        // Director resets all flags
-        designResetCols.senior_draftsman = false;
-        designResetCols.engineers = false;
-        designResetCols.unit_head = false;
-        designResetCols.director = false;
-      } else if (role === 4) {
-        // Unit head resets from engineers onwards
-        designResetCols.engineers = false;
-        designResetCols.unit_head = false;
-      } else if (role.find((id) => engineersId.has(id))) {
-        // Engineers reset themselves
-        designResetCols.engineers = false;
-      }
-
-      await Promise.all([
-        supabase
-          .from("task_profile")
-          .update({ revision: true })
-          .eq("task_id", taskId),
-        supabase.from("task_revision").insert({
+    const [taskApp, taskProf, taskRev] = await Promise.all([
+      req.supabase
+        .from("task_approval")
+        .update(resetCols)
+        .eq("task_id", taskId),
+      req.supabase
+        .from("task_profile")
+        .update({ revision: true })
+        .eq("task_id", taskId),
+      req.supabase
+        .from("task_revision")
+        .insert({
           task_id: taskId,
           from_user: req.user.id,
           to_user: task.assignee,
           role,
           is_read: false,
-        }),
-      ]);
-    } else {
-      // Regular task revision logic
-      const resetCols =
-        role === 1
-          ? {
-              unit_head: false,
-              director: false,
-              revised_at: new Date().toISOString(),
-            }
-          : {
-              unit_head: false,
-              revised_at: new Date().toISOString(),
-            };
+        })
+        .select("id")
+        .maybeSingle(),
+    ]);
+    const { error: commentErr } = await req.supabase
+      .from("comment_section")
+      .insert({
+        user_id: req.user.id,
+        task_id: taskId,
+        message: comment,
+        revision_id: taskRev.data.id,
+      });
 
-      await Promise.all([
-        supabase.from("task_approval").update(resetCols).eq("task_id", taskId),
-        supabase
-          .from("task_profile")
-          .update({ revision: true })
-          .eq("task_id", taskId),
-        supabase.from("task_revision").insert({
-          task_id: taskId,
-          from_user: req.user.id,
-          to_user: task.assignee,
-          role,
-          is_read: false,
-        }),
-        req.supabase.from("comment_section").insert({
-          user_id: req.user.id,
-          task_id: taskId,
-          message: comment,
-        }),
-      ]);
-    }
+    if (taskRev.error) throw taskRev.error;
+    if (commentErr) throw commentErr;
 
     const formattedTasks = await fetchTasks(
       req.supabase,
@@ -432,12 +394,14 @@ router.post("/revision_request", async (req, res) => {
 });
 
 router.post("/resubmit", async (req, res) => {
-  const { taskId, newOutputLink, parentId } = req.body;
+  const { taskId, newOutputLink, comment, parentId } = req.body;
+
+  if (!comment) throw new Error("No comment");
 
   try {
     const { data: task } = await req.supabase
       .from("task")
-      .select("assignee")
+      .select("id, assignee")
       .eq("id", taskId);
 
     if (!task) throw new Error("Task not found");
@@ -457,10 +421,10 @@ router.post("/resubmit", async (req, res) => {
       }
     }
 
-    const [{ data: lastRevision }, []] = await Promise.all([
+    const [{ data: lastRevision }, taskProf] = await Promise.all([
       req.supabase
         .from("task_revision")
-        .select("role, from_user")
+        .select("id, role, from_user")
         .eq("task_id", taskId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -475,33 +439,46 @@ router.post("/resubmit", async (req, res) => {
     const revisorRole = lastRevision?.role || 4;
     const assigneeId = task?.assignee || req.user.id;
 
+    let dbQueries = [];
+
     if (revisorRole === 1) {
-      await req.supabase
-        .from("task_approval")
-        .update({
-          unit_head: true,
-          director: false,
-          revised_at: null,
-        })
-        .eq("task_id", taskId);
+      dbQueries.push(
+        req.supabase
+          .from("task_approval")
+          .update({
+            unit_head: true,
+            director: false,
+            revised_at: null,
+          })
+          .eq("task_id", taskId),
+      );
 
       if (lastRevision?.from_user) {
-        await req.supabase.from("task_revision").insert({
-          task_id: taskId,
-          from_user: req.user.id,
-          to_user: lastRevision.from_user,
-          role: 1,
-          is_read: false,
-        });
+        dbQueries.push(
+          req.supabase
+            .from("task_revision")
+            .insert({
+              task_id: taskId,
+              from_user: req.user.id,
+              to_user: lastRevision.from_user,
+              role: 1,
+              is_read: false,
+            })
+            .select("id")
+            .maybeSingle(),
+        );
       }
-      await req.supabase.from("task_notif").upsert(
-        {
-          task_id: taskId,
-          read_by_director: false,
-          read_by_assignee: true,
-          read_by_unit_head: true,
-        },
-        { onConflict: "task_id" },
+
+      dbQueries.push(
+        req.supabase.from("task_notif").upsert(
+          {
+            task_id: taskId,
+            read_by_director: false,
+            read_by_assignee: true,
+            read_by_unit_head: true,
+          },
+          { onConflict: "task_id" },
+        ),
       );
     } else {
       const { isOfficeMember } = await resolvePosUnitIds(
@@ -517,27 +494,63 @@ router.post("/resubmit", async (req, res) => {
       const isSelfAssigned = assignerData?.assigner === assigneeId;
 
       if (isOfficeMember || isSelfAssigned) {
-        await req.supabase
-          .from("task_approval")
-          .update({ unit_head: true, revised_at: null })
-          .eq("task_id", taskId);
+        dbQueries.push(
+          req.supabase
+            .from("task_approval")
+            .update({ unit_head: true, revised_at: null })
+            .eq("task_id", taskId),
+        );
       } else {
-        await req.supabase
-          .from("task_approval")
-          .update({ revised_at: null })
-          .eq("task_id", taskId);
+        dbQueries.push(
+          req.supabase
+            .from("task_approval")
+            .update({ revised_at: null })
+            .eq("task_id", taskId),
+        );
       }
 
-      await _notifySubmission(
-        req.supabase,
-        taskId,
-        null,
-        assigneeId,
-        req.user.id,
-        "📎 Revised output resubmitted — awaiting your review.",
-        isSelfAssigned,
+      if (lastRevision?.from_user) {
+        dbQueries.push(
+          req.supabase
+            .from("task_revision")
+            .insert({
+              task_id: taskId,
+              from_user: req.user.id,
+              to_user: lastRevision.from_user,
+              role: 4,
+              is_read: false,
+            })
+            .select("id")
+            .maybeSingle(),
+        );
+      }
+
+      dbQueries.push(
+        _notifySubmission(
+          req.supabase,
+          taskId,
+          null,
+          assigneeId,
+          req.user.id,
+          "📎 Revised output resubmitted — awaiting your review.",
+          isSelfAssigned,
+        ),
       );
     }
+
+    const [taskApp, taskRev, taskNotif] = await Promise.all(dbQueries);
+    if (taskRev) {
+      const { error: commentErr } = await req.supabase
+        .from("comment_section")
+        .insert({
+          user_id: req.user.id,
+          subtask_id: task.id,
+          message: comment,
+          revision_id: taskRev?.data?.id,
+        });
+      if (commentErr) throw commentErr;
+    } else throw taskRev.error;
+
     const formattedTasks = await fetchTasks(
       req.supabase,
       req.user.id,
