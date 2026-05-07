@@ -218,7 +218,6 @@ router.post("/approve", async (req, res) => {
           from_user: req.user.id,
           to_user: subtask.assignee,
           role: role,
-          comment: approvalMessage,
           is_read: false,
         }),
       ]);
@@ -231,20 +230,20 @@ router.post("/approve", async (req, res) => {
       const [{ error: updateErr }, { error: revisionErr }] = await Promise.all([
         req.supabase
           .from("task_approval")
-          .update({ [col]: true, revision_comment: null, revised_at: null })
+          .update({ [col]: true, revised_at: null })
           .eq("subtask_id", subtaskId),
 
-        req.supabase.from("task_revision").insert({
-          subtask_id: subtaskId,
-          from_user: req.user.id,
-          to_user: subtask.assignee,
-          role: role,
-          comment:
-            role === 1
-              ? "✅ Subtask fully approved by Director."
-              : "✅ Subtask approved by Unit Head — forwarded to Director.",
-          is_read: false,
-        }),
+        // req.supabase.from("task_revision").insert({
+        //   subtask_id: subtaskId,
+        //   from_user: req.user.id,
+        //   to_user: subtask.assignee,
+        //   role: role,
+        //   comment:
+        //     role === 1
+        //       ? "✅ Subtask fully approved by Director."
+        //       : "✅ Subtask approved by Unit Head — forwarded to Director.",
+        //   is_read: false,
+        // }),
       ]);
 
       if (updateErr) throw new Error(updateErr.message);
@@ -317,7 +316,6 @@ router.post("/resubmit", async (req, res) => {
           .update({
             unit_head: true,
             director: false,
-            revision_comment: null,
             revised_at: null,
           })
           .eq("subtask_id", subtaskId),
@@ -330,8 +328,6 @@ router.post("/resubmit", async (req, res) => {
             from_user: req.user.id,
             to_user: lastRevision.from_user,
             role: 1,
-            comment:
-              "📎 Revised output resubmitted — awaiting your final approval.",
             is_read: false,
           }),
         );
@@ -367,7 +363,6 @@ router.post("/resubmit", async (req, res) => {
             .update({
               unit_head: true,
               director: false,
-              revision_comment: null,
               revised_at: null,
             })
             .eq("subtask_id", subtaskId),
@@ -379,7 +374,6 @@ router.post("/resubmit", async (req, res) => {
             .update({
               unit_head: false,
               director: false,
-              revision_comment: null,
               revised_at: null,
             })
             .eq("subtask_id", subtaskId),
@@ -495,10 +489,11 @@ router.post("/delete", async (req, res) => {
 router.get("/fetch_revisions", async (req, res) => {
   const { subtaskId } = req.query;
   try {
-    const { data } = await req.supabase
-      .from("task_revision")
-      .select(
-        `
+    const [{ data: revisionData }, { data: commentData }] = await Promise.all([
+      req.supabase
+        .from("task_revision")
+        .select(
+          `
           id,
           subtask_id,
           from_user,
@@ -509,15 +504,28 @@ router.get("/fetch_revisions", async (req, res) => {
           ),
           to_user,
           role,
-          comment,
           is_read,
           created_at
           `,
-      )
-      .eq("subtask_id", subtaskId)
-      .order("created_at", { ascending: true });
+        )
+        .eq("subtask_id", subtaskId)
+        .order("created_at", { ascending: true }),
+      req.supabase
+        .from("comment_section")
+        .select(`id, user_id, subtask_id, message`)
+        .eq("subtask_id", subtaskId),
+    ]);
 
-    const unread = (data || [])
+    const result = (revisionData || []).map((r) => {
+      return {
+        ...r,
+        comments: (commentData || []).filter(
+          (c) => c.subtask_id === r.subtask_id,
+        ),
+      };
+    });
+
+    const unread = (result || [])
       .filter((r) => r.to_user === req.user.id && !r.is_read)
       .map((r) => r.id);
     if (unread.length) {
@@ -527,8 +535,10 @@ router.get("/fetch_revisions", async (req, res) => {
         .in("id", unread);
     }
 
+    console.log(result);
+
     return res.status(200).json(
-      (data || []).map((r) => ({
+      (result || []).map((r) => ({
         ...r,
         fromName: resolveNames[r.fromName],
       })),
@@ -580,8 +590,12 @@ router.post("/revision_request", async (req, res) => {
           from_user: req.user.id,
           to_user: subtask.assignee,
           role,
-          comment,
           is_read: false,
+        }),
+        req.supabase.from("comment_section").insert({
+          user_id: req.user.id,
+          subtask_id: subtaskId,
+          message: comment,
         }),
       ]);
     } else {
@@ -591,12 +605,10 @@ router.post("/revision_request", async (req, res) => {
           ? {
               unit_head: false,
               director: false,
-              revision_comment: comment,
               revised_at: new Date().toISOString(),
             }
           : {
               unit_head: false,
-              revision_comment: comment,
               revised_at: new Date().toISOString(),
             };
 
@@ -614,8 +626,12 @@ router.post("/revision_request", async (req, res) => {
           from_user: req.user.id,
           to_user: subtask.assignee,
           role,
-          comment,
           is_read: false,
+        }),
+        req.supabase.from("comment_section").insert({
+          user_id: req.user.id,
+          subtask_id: subtaskId,
+          message: comment,
         }),
       ]);
     }

@@ -29,27 +29,39 @@ router.get("/fetch", async (req, res) => {
 router.get("/fetch_revisions", async (req, res) => {
   const { taskId } = req.query;
   try {
-    const { data } = await req.supabase
-      .from("task_revision")
-      .select(
-        `
-        id,
-        task_id,
-        from_user,
-        fromName:user_id!task_revision_from_user_fkey(
-          fname,
-          lname,
-          middle_initial
-        ),
-        to_user,
-        role,
-        comment,
-        is_read,
-        created_at
-        `,
-      )
-      .eq("task_id", taskId)
-      .order("created_at", { ascending: true });
+    const [{ data: revisionData }, { data: commentData }] = await Promise.all([
+      req.supabase
+        .from("task_revision")
+        .select(
+          `
+          id,
+          task_id,
+          from_user,
+          fromName:user_id!task_revision_from_user_fkey(
+            fname,
+            lname,
+            middle_initial
+          ),
+          to_user,
+          role,
+          is_read,
+          created_at
+          `,
+        )
+        .eq("task_id", taskId)
+        .order("created_at", { ascending: true }),
+      req.supabase
+        .from("comment_section")
+        .select(`id, user_id, task_id, message`)
+        .eq("task_id", taskId),
+    ]);
+
+    const data = (revisionData || []).map((r) => {
+      return {
+        ...r,
+        comments: (commentData || []).filter((c) => c.task_id === r.task_id),
+      };
+    });
 
     const unread = (data || [])
       .filter((r) => r.to_user === req.user.id && !r.is_read)
@@ -295,20 +307,20 @@ router.post("/approve", async (req, res) => {
     const [{ error: updateErr }, { error: revisionErr }] = await Promise.all([
       req.supabase
         .from("task_approval")
-        .update({ [col]: true, revision_comment: null, revised_at: null })
+        .update({ [col]: true, revised_at: null })
         .eq("task_id", taskId),
 
-      req.supabase.from("task_revision").insert({
-        task_id: taskId,
-        from_user: req.user.id,
-        to_user: task.assignee,
-        role,
-        comment:
-          role === 1
-            ? "✅ Task fully approved by Director."
-            : "✅ Task approved by Unit Head — forwarded to Director.",
-        is_read: false,
-      }),
+      // req.supabase.from("task_revision").insert({
+      //   task_id: taskId,
+      //   from_user: req.user.id,
+      //   to_user: task.assignee,
+      //   role,
+      //   comment:
+      //     role === 1
+      //       ? "✅ Task fully approved by Director."
+      //       : "✅ Task approved by Unit Head — forwarded to Director.",
+      //   is_read: false,
+      // }),
     ]);
 
     if (updateErr) throw new Error(updateErr.message);
@@ -368,7 +380,6 @@ router.post("/revision_request", async (req, res) => {
           from_user: req.user.id,
           to_user: task.assignee,
           role,
-          comment,
           is_read: false,
         }),
       ]);
@@ -379,12 +390,10 @@ router.post("/revision_request", async (req, res) => {
           ? {
               unit_head: false,
               director: false,
-              revision_comment: comment,
               revised_at: new Date().toISOString(),
             }
           : {
               unit_head: false,
-              revision_comment: comment,
               revised_at: new Date().toISOString(),
             };
 
@@ -399,8 +408,12 @@ router.post("/revision_request", async (req, res) => {
           from_user: req.user.id,
           to_user: task.assignee,
           role,
-          comment,
           is_read: false,
+        }),
+        req.supabase.from("comment_section").insert({
+          user_id: req.user.id,
+          task_id: taskId,
+          message: comment,
         }),
       ]);
     }
@@ -468,7 +481,6 @@ router.post("/resubmit", async (req, res) => {
         .update({
           unit_head: true,
           director: false,
-          revision_comment: null,
           revised_at: null,
         })
         .eq("task_id", taskId);
@@ -479,8 +491,6 @@ router.post("/resubmit", async (req, res) => {
           from_user: req.user.id,
           to_user: lastRevision.from_user,
           role: 1,
-          comment:
-            "📎 Revised output resubmitted — awaiting your final approval.",
           is_read: false,
         });
       }
@@ -509,12 +519,12 @@ router.post("/resubmit", async (req, res) => {
       if (isOfficeMember || isSelfAssigned) {
         await req.supabase
           .from("task_approval")
-          .update({ unit_head: true, revision_comment: null, revised_at: null })
+          .update({ unit_head: true, revised_at: null })
           .eq("task_id", taskId);
       } else {
         await req.supabase
           .from("task_approval")
-          .update({ revision_comment: null, revised_at: null })
+          .update({ revised_at: null })
           .eq("task_id", taskId);
       }
 

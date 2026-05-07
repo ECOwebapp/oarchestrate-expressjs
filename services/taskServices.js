@@ -15,7 +15,7 @@ export const columnResolver = (taskId, subtaskId) => {
 const SELECT_QUERY = (isSubtask = false) => {
   const PROFILE_FIELDS = `fname, middle_initial, lname, positions:position(unit_id, pos_id)`;
   const TASK_INFO = `title, description, urgent, revision, task_type, task_type_ref:task_type(task_type)`;
-  const APPROVAL = `unit_head, director, revision_comment, revised_at`;
+  const APPROVAL = `unit_head, director, revised_at`;
   const DURATION = `created, deadline`;
   const OUTPUT = `link`;
 
@@ -48,7 +48,13 @@ const SELECT_QUERY = (isSubtask = false) => {
   }
 };
 
-const formatRow = (t, activeUnitHeadId, userId, isSubtask = false) => {
+const formatRow = (
+  t,
+  activeUnitHeadId,
+  userId,
+  comments,
+  isSubtask = false,
+) => {
   const roles = t.assignee_profile?.positions?.map((r) => r.pos_id) || [];
   const units = t.assignee_profile?.positions?.map((r) => r.unit_id) || [];
 
@@ -78,7 +84,9 @@ const formatRow = (t, activeUnitHeadId, userId, isSubtask = false) => {
     outputLink: t.task_output?.link || "",
     unitHead: !!t.task_approval?.unit_head,
     director: !!t.task_approval?.director,
-    revisionComment: t.task_approval?.revision_comment || "",
+    revisionComment: comments?.find(
+      (c) => t.id === c.task_id || t.id === c.subtask_id,
+    )?.message,
     revisedAt: t.task_approval?.revised_at || null,
     overdue: (() => {
       const dl = t.task_duration?.deadline
@@ -152,10 +160,19 @@ export const fetchTasks = async (
     if (!isDirector) query = query.eq("assignee", userId);
     query = query.eq("task_profile.task_type", 2);
   }
-  const { data: tasks, error } = await query.order("id", { ascending: false });
+  const [{ data: tasks, error }, { data: comments, error: commentErr }] =
+    await Promise.all([
+      query.order("id", { ascending: false }),
+      supabase
+        .from("comment_section")
+        .select(`id, user_id, task_id, message, created_at`),
+    ]);
   if (error) throw error;
+  if (commentErr) throw commentErr;
 
-  return tasks.map((t) => formatRow(t, activeUnitHeadId, userId, false));
+  return tasks.map((t) =>
+    formatRow(t, activeUnitHeadId, userId, comments, false),
+  );
 };
 
 export const fetchSubtasks = async (
@@ -224,9 +241,15 @@ export const fetchSubtasks = async (
     subtaskRows = data || [];
   }
 
+  const { data: comments } = await supabase
+    .from("comment_section")
+    .select(`id, user_id, subtask_id, message, created_at`);
+
   // 3. Final Mapping
   // Pass the requester's ID to mapRow to handle 'isOwnTask' logic on the server
-  return subtaskRows.map((st) => formatRow(st, activeUnitHeadId, userId, true));
+  return subtaskRows.map((st) =>
+    formatRow(st, activeUnitHeadId, userId, comments, true),
+  );
 };
 
 /* Dashboard tasks */
