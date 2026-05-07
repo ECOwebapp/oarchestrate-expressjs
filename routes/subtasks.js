@@ -532,7 +532,7 @@ router.get("/fetch_revisions", async (req, res) => {
           ),
           to_user,
           role,
-          comment:comment_section!comment_section_revision_id_fkey(message)
+          comment:comment_section!comment_section_revision_id_fkey(message),
           is_read,
           created_at
           `,

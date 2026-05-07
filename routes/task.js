@@ -26,63 +26,6 @@ router.get("/fetch", async (req, res) => {
   }
 });
 
-router.get("/fetch_revisions", async (req, res) => {
-  const { taskId } = req.query;
-  try {
-    const { data: revisionData } = await req.supabase
-      .from("task_revision")
-      .select(
-        `
-          id,
-          task_id,
-          from_user,
-          fromName:user_profile!task_revision_from_user_fkey(
-            fname,
-            lname,
-            middle_initial
-          ),
-          to_user,
-          role,
-          comment:comment_section!comment_section_revision_id_fkey(message)
-          is_read,
-          created_at
-          `,
-      )
-      .eq("task_id", taskId)
-      .order("created_at", { ascending: true });
-
-    const unread = (revisionData || [])
-      .filter((r) => r.to_user === req.user.id && !r.is_read)
-      .map((r) => r.id);
-    if (unread.length) {
-      await req.supabase
-        .from("task_revision")
-        .update({ is_read: true })
-        .in("id", unread);
-    }
-
-    const result = (revisionData || []).map((r) => {
-      // 1. Handle the nested comment array from Supabase
-      // If using a relationship, r.comments will be an array [ { message: "..." } ]
-      const commentObj = Array.isArray(r.comment) ? r.comment[0] : r.comment;
-
-      return {
-        ...r,
-        // Use optional chaining to prevent crashes if message is missing
-        comment: commentObj?.message,
-
-        // 2. Resolve the name string
-        fromName: resolveNames(r.fromName),
-      };
-    });
-
-    return res.status(200).json(result);
-  } catch (err) {
-    console.log("Error fetching revisions: ", err.message);
-    return res.status(500).json({ error: err.message });
-  }
-});
-
 router.post("/upsert", async (req, res) => {
   const { mainTask } = req.body;
 
@@ -318,6 +261,67 @@ router.post("/approve", async (req, res) => {
     return res.status(200).json(formattedTasks);
   } catch (err) {
     console.log("Error approving task: ", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/* REVISIONS */
+
+router.get("/fetch_revisions", async (req, res) => {
+  const { taskId } = req.query;
+  try {
+    const { data: revisionData } = await req.supabase
+      .from("task_revision")
+      .select(
+        `
+          id,
+          task_id,
+          from_user,
+          fromName:user_profile!task_revision_from_user_fkey(
+            fname,
+            lname,
+            middle_initial
+          ),
+          to_user,
+          role,
+          comment:comment_section!comment_section_revision_id_fkey(message),
+          is_read,
+          created_at
+          `,
+      )
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true });
+
+    const unread = (revisionData || [])
+      .filter((r) => r.to_user === req.user.id && !r.is_read)
+      .map((r) => r.id);
+    if (unread.length) {
+      await req.supabase
+        .from("task_revision")
+        .update({ is_read: true })
+        .in("id", unread);
+    }
+
+    console.log(revisionData);
+
+    const result = (revisionData || []).map((r) => {
+      // 1. Handle the nested comment array from Supabase
+      // If using a relationship, r.comments will be an array [ { message: "..." } ]
+      const commentObj = Array.isArray(r.comment) ? r.comment[0] : r.comment;
+
+      return {
+        ...r,
+        // Use optional chaining to prevent crashes if message is missing
+        comment: commentObj?.message,
+
+        // 2. Resolve the name string
+        fromName: resolveNames(r.fromName),
+      };
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    console.log("Error fetching revisions: ", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
