@@ -20,7 +20,7 @@ router.get("/fetch", async (req, res) => {
       .filter((p) => p.is_involved !== false && !isInsertionProject(p))
       .map((p) => ({
         ...p,
-        director: p.director
+        directorName: p.director
           ? `${p.director.fname}
                     ${p.director.middle_initial !== null ? p.director.middle_initial : ""}
                     ${p.director.lname}`
