@@ -167,7 +167,7 @@ router.post("/upsert", async (req, res) => {
     subtaskData = {};
     return res.status(200).json(formattedSubtasks);
   } catch (err) {
-    console.log("Error adding tasks: ", err.message);
+    console.error("Error adding tasks: ", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -227,27 +227,12 @@ router.post("/approve", async (req, res) => {
     } else {
       // Handle regular subtask approvals
       const col = role === 1 ? "director" : "unit_head";
-      const [{ error: updateErr }, { error: revisionErr }] = await Promise.all([
-        req.supabase
-          .from("task_approval")
-          .update({ [col]: true, revised_at: null })
-          .eq("subtask_id", subtaskId),
-
-        // req.supabase.from("task_revision").insert({
-        //   subtask_id: subtaskId,
-        //   from_user: req.user.id,
-        //   to_user: subtask.assignee,
-        //   role: role,
-        //   comment:
-        //     role === 1
-        //       ? "✅ Subtask fully approved by Director."
-        //       : "✅ Subtask approved by Unit Head — forwarded to Director.",
-        //   is_read: false,
-        // }),
-      ]);
+      const { error: updateErr } = await req.supabase
+        .from("task_approval")
+        .update({ [col]: true, revised_at: null })
+        .eq("subtask_id", subtaskId);
 
       if (updateErr) throw new Error(updateErr.message);
-      if (revisionErr) throw new Error(revisionErr.message);
     }
 
     const formattedSubtasks = await fetchSubtasks(
@@ -258,7 +243,7 @@ router.post("/approve", async (req, res) => {
     );
     return res.status(200).json(formattedSubtasks);
   } catch (err) {
-    console.log("Error approving subtask: ", err.message);
+    console.error("Error approving subtask: ", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -434,7 +419,7 @@ router.post("/resubmit", async (req, res) => {
     );
     return res.status(200).json(formattedSubtasks);
   } catch (err) {
-    console.log("Error resubmiting: ", err.message);
+    console.error("Error resubmiting: ", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -508,7 +493,7 @@ router.post("/delete", async (req, res) => {
     );
     return res.status(200).json(formattedSubtasks);
   } catch (err) {
-    console.log("Error deleting tasks: ", err.message);
+    console.error("Error deleting tasks: ", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -567,7 +552,7 @@ router.get("/fetch_revisions", async (req, res) => {
 
     return res.status(200).json(result);
   } catch (err) {
-    console.log("Error fetching revisions: ", err.message);
+    console.error("Error fetching revisions: ", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -659,7 +644,7 @@ router.post("/revision_request", async (req, res) => {
           .insert({
             subtask_id: subtaskId,
             from_user: req.user.id,
-            to_user: subtask.assignee, // null
+            to_user: subtask.assignee,
             role,
             is_read: false,
           })
@@ -688,7 +673,7 @@ router.post("/revision_request", async (req, res) => {
     );
     return res.status(200).json(formattedSubtasks);
   } catch (err) {
-    console.log("Error requesting revision: ", err.message);
+    console.error("Error requesting revision: ", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
