@@ -1,2 +1,2 @@
 # oarchestrate-expressjs
-Stateless Backend of Oarchestrate
+Stateless Backend for Oarchestrate
