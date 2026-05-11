@@ -35,7 +35,7 @@ router.get("/fetch", async (req, res) => {
 });
 
 router.post("/insert", async (req, res) => {
-  const { title, description, deadline } = req.body;
+  const { name, description, deadline } = req.body;
   try {
     const {
       data: projectRes,
@@ -44,9 +44,9 @@ router.post("/insert", async (req, res) => {
     } = await req.supabase
       .from("ppa")
       .insert({
-        name: title,
-        description: description,
-        deadline: deadline,
+        name,
+        description,
+        deadline,
         director_id: req.user.id,
       })
       .select();
@@ -61,7 +61,7 @@ router.post("/insert", async (req, res) => {
 });
 
 router.post("/update", async (req, res) => {
-  const { project } = req.body;
+  const { id, name, description, deadline } = req.body;
   try {
     const {
       data: projectRes,
@@ -69,8 +69,8 @@ router.post("/update", async (req, res) => {
       status,
     } = await req.supabase
       .from("ppa")
-      .update({ project })
-      .eq("id", project.id)
+      .update({ name, description, deadline })
+      .eq("id", id)
       .select();
 
     if (projectErr) throw new Error(projectErr);
