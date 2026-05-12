@@ -53,7 +53,7 @@ router.post("/insert", async (req, res) => {
 
     if (projectErr) throw new Error(projectErr);
 
-    return res.status(status || 200);
+    return res.status(status || 200).send("success");
   } catch (e) {
     console.log("Failed to insert PPAs: ", e.message);
     return res.status(500).json({ erroor: e.message });
@@ -75,7 +75,7 @@ router.post("/update", async (req, res) => {
 
     if (projectErr) throw new Error(projectErr);
 
-    return res.status(status || 200);
+    return res.status(status || 200).send("success");
   } catch (e) {
     console.log("Failed to update PPAs: ", e.message);
     return res.status(500).json({ erroor: e.message });
@@ -92,7 +92,7 @@ router.post("/delete", async (req, res) => {
 
     if (projectErr) throw new Error(projectErr);
 
-    return res.status(projectStatus || 204);
+    return res.status(projectStatus || 204).send(projectStatus);
   } catch (e) {
     console.log("Failed to delete PPAs: ", e.message);
     return res.status(500).json({ erroor: e.message });
