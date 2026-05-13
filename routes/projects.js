@@ -35,7 +35,7 @@ router.get("/fetch", async (req, res) => {
 });
 
 router.post("/insert", async (req, res) => {
-  const { name, description, deadline } = req.body;
+  const { name, description, created_at, deadline } = req.body;
   try {
     const {
       data: projectRes,
@@ -46,6 +46,7 @@ router.post("/insert", async (req, res) => {
       .insert({
         name,
         description,
+        created_at,
         deadline,
         director_id: req.user.id,
       })
@@ -61,7 +62,8 @@ router.post("/insert", async (req, res) => {
 });
 
 router.post("/update", async (req, res) => {
-  const { id, name, description, deadline } = req.body;
+  const { id, name, description, created_at, deadline, is_completed } =
+    req.body;
   try {
     const {
       data: projectRes,
@@ -69,7 +71,7 @@ router.post("/update", async (req, res) => {
       status,
     } = await req.supabase
       .from("ppa")
-      .update({ name, description, deadline })
+      .update({ name, description, created_at, deadline, is_completed })
       .eq("id", id)
       .select();
 
