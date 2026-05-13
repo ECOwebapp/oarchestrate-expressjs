@@ -4,6 +4,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import { verifyToken } from "./middleware/verifyToken.js";
 import authRoute from "./routes/auth.js";
+import recoveryRoute from "./routes/recovery.js";
 import profileRoute from "./routes/profile.js";
 import projectRoute from "./routes/projects.js";
 import taskRoute from "./routes/task.js";
@@ -66,6 +67,7 @@ app
   // Use verifyToken for actions that requires user authentication
 
   .use("/auth", authRoute)
+  .use("/recovery", recoveryRoute)
   .use("/users_info", usersInfoRoute)
   .use("/profile", verifyToken, profileRoute)
   .use("/ppa", verifyToken, projectRoute)
