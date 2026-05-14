@@ -258,8 +258,6 @@ router.get("/fetch", verifyToken, async (req, res) => {
       taskErr = `Task: ${e1 || ""} | Subtask: ${e2 || ""}`;
     }
 
-    if (taskErr) console.error("[notifStore] task fetch error:", taskErr);
-
     const uids2 = [
       ...new Set(
         (taskRows || [])
@@ -361,7 +359,6 @@ router.get("/fetch", verifyToken, async (req, res) => {
     results.sort((a, b) => new Date(b.time) - new Date(a.time));
     return res.status(200).json({ data: results });
   } catch (e) {
-    console.error("[notifStore] fetchNotifs error:", e);
     return res.status(500).json({ error: e.message });
   }
 });
@@ -415,7 +412,7 @@ router.post("/mark_all_as_read", verifyToken, async (req, res) => {
 let clients = [];
 
 // Endpoint for the Vue frontend to connect
-router.get("/events", verifyToken, (req, res) => {
+router.get("/events", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");

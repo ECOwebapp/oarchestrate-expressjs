@@ -25,6 +25,8 @@ const PORT = 3000;
 const allowedOrigins = [
   "http://localhost:5173", // Local Vue dev port
   "https://oarchestrate.vercel.app",
+  /^http:\/\/localhost(?::\d+)?$/,
+  /^http:\/\/127\.0\.0\.1(?::\d+)?$/,
   /\.vercel\.app$/, // This regex allows all Vercel preview deployments
 ];
 
@@ -40,7 +42,7 @@ app
     cors({
       origin: function (origin, callback) {
         // Allow requests with no origin (like mobile apps or curl)
-        // if (!origin) return callback(null, true);
+        if (!origin) return callback(null, true);
 
         const isAllowed = allowedOrigins.some((allowed) => {
           return allowed instanceof RegExp

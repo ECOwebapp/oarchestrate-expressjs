@@ -1,8 +1,18 @@
-import { supabase } from "../lib/supabaseClient.js";
+import { supabase, tempSupabaseClient } from "../lib/supabaseClient.js";
 import express from "express";
 import { fetchUserData } from "../services/authServices.js";
 import { verifyToken } from "../middleware/verifyToken.js";
 const router = express.Router();
+
+const isProd = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+const cookieOptions = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: isProd ? "none" : "lax",
+  path: "/",
+};
+
+if (isProd) cookieOptions.partitioned = true;
 
 // Change to POST for security and body access
 router.post("/login", async (req, res) => {
@@ -57,16 +67,13 @@ router.post("/login", async (req, res) => {
     const userData = await fetchUserData(supabase, userId);
 
     res.cookie("access_token", authData.session.access_token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      maxAge: 86400000, // 24 Hours,
-      partitioned: true,
-      path: "/",
+      ...cookieOptions,
+      maxAge: 86400000, // 24 hours
     });
 
     return res.status(200).json({
       userId,
+      access_token: authData.session.access_token,
       userData: userData,
     });
   } catch (err) {
@@ -169,11 +176,7 @@ router.post("/logout", verifyToken, async (req, res) => {
 
   if (error) return res.json({ error: error.message });
   res.clearCookie("access_token", {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    partitioned: true,
-    path: "/",
+    ...cookieOptions,
   });
   return res.status(200).json({ message: "Logged out successfully" });
 });
@@ -196,20 +199,70 @@ router.get("/me", verifyToken, async (req, res) => {
 // Requires testing when internet connection returns
 // >> Hexer <<
 router.post("/pass", verifyToken, async (req, res) => {
-  const { payload, status } = req.body;
+  const { payload, status } = req.body || {};
+  const token = req.cookies?.access_token;
+
   try {
-    if (status === "verify") {
-      payload.email = req.user.email;
-      const { error } = await req.supabase.auth.signInWithPassword(payload);
-      if (error) throw new Error(error.message);
-    } else if (status === "change") {
-      const { error } = await req.supabase.auth.updateUser(payload);
-      if (error) throw new Error(error.message);
+    if (!status || !payload?.password) {
+      return res.status(400).json({ error: "Missing password request data" });
     }
-    return res.status(204).send(204);
+
+    if (status === "verify") {
+      if (!req.user?.email) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: req.user.email,
+        password: payload.password,
+      });
+      if (error) {
+        return res.status(400).json({ error: error.message || "Current password is incorrect" });
+      }
+
+      return res.status(200).json({ message: "Password verified" });
+    } else if (status === "change") {
+      if (!req.user?.email) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const newPassword = payload?.password;
+      const currentPassword = payload?.currentPassword;
+
+      if (!newPassword) {
+        return res.status(400).json({ error: "New password is required" });
+      }
+
+      // Create a temp client and establish a session by re-authenticating
+      const tempClient = tempSupabaseClient(token || "");
+      
+      // Step 1: Re-auth to establish session on this client instance
+      const { data: authData, error: reauthError } =
+        await tempClient.auth.signInWithPassword({
+          email: req.user.email,
+          password: currentPassword,
+        });
+
+      if (reauthError) {
+        return res.status(400).json({ error: "Current password is incorrect" });
+      }
+
+      // Step 2: Now that session is established, call updateUser on same client
+      const { error: updateError } = await tempClient.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        return res.status(400).json({ error: updateError.message || "Unable to update password" });
+      }
+
+      return res.status(200).json({ message: "Password updated" });
+    }
+
+    return res.status(400).json({ error: "Unsupported password action" });
   } catch (err) {
-    console.log("Failed to update password: ", err.message);
-    return res.status(500).json({ error: err.message });
+    console.log("Failed to update password: ", err?.message || err);
+    return res.status(500).json({ error: "Password endpoint failed" });
   }
 });
 
