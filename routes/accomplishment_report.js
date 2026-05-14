@@ -24,7 +24,7 @@ router.get('/load_all_tasks', async (req, res) => {
     const unitMemberMap = {}
     for (const row of unitRows) {
         const uid = row.unit_id
-        const name = row.unit_name || `Unit ${uid}`
+        const name = (row.unit_name?.name) || `Unit ${uid}`
         if (!unitNameMap[uid]) unitNameMap[uid] = name
         if (!unitMemberMap[uid]) unitMemberMap[uid] = []
         if (row.user_id) unitMemberMap[uid].push(row.user_id)
@@ -39,9 +39,10 @@ router.get('/load_all_tasks', async (req, res) => {
     }
 
     // If not director, restrict to own unit only
+    const userUnits = userUnitMap[req.user.id] || []
     const allowedUnitIds = isDirector
         ? Object.keys(unitMemberMap).map(Number)
-        : currentUserUnitId.value ? [currentUserUnitId.value] : []
+        : userUnits.length > 0 ? userUnits : []
 
     const allMemberIds = [...new Set([
         ...allowedUnitIds.flatMap(uid => unitMemberMap[uid] || []),
@@ -53,13 +54,12 @@ router.get('/load_all_tasks', async (req, res) => {
     const { data, error: taskError } = await req.supabase
         .from('task')
         .select(`
-        id, parent_id, assignee,
+        id, assignee,
         task_profile ( title, task_type_ref:task_type(task_type) ),
-        task_approval ( unit_head, director, revision_comment ),
+        task_approval ( unit_head, director, revised_at ),
         task_duration ( created, deadline ),
         task_output   ( link )
       `)
-        .is('parent_id', null)
         .in('assignee', allMemberIds)
         .order('id')
 
@@ -70,13 +70,17 @@ router.get('/load_all_tasks', async (req, res) => {
 
     if (!data || !data.length) { return res.status(400).json({ error: 'No task found' }) }
 
-    const parentTaskIds = data.map(t => t.id).filter(Boolean)
+    // Filter to only show approved tasks (director approval)
+    const approvedTasks = data.filter(t => t.task_approval?.director)
+    if (!approvedTasks.length) { return res.status(200).json({ data: [] }) }
+
+    const parentTaskIds = approvedTasks.map(t => t.id).filter(Boolean)
     const subtaskMap = {}
     if (parentTaskIds.length) {
         const { data: subtasksData, error: subtasksError } = await req.supabase
-            .from('task')
-            .select('id, parent_id, task_profile ( title )')
-            .in('parent_id', parentTaskIds)
+            .from('subtask')
+            .select('id, parent_task_id, task_profile ( title )')
+            .in('parent_task_id', parentTaskIds)
             .order('id')
 
         if (subtasksError) {
@@ -85,7 +89,7 @@ router.get('/load_all_tasks', async (req, res) => {
         }
 
         ; (subtasksData || []).forEach((s) => {
-            const pid = s.parent_id
+            const pid = s.parent_task_id
             if (!pid) return
             if (!subtaskMap[pid]) subtaskMap[pid] = []
             subtaskMap[pid].push(s)
@@ -94,7 +98,7 @@ router.get('/load_all_tasks', async (req, res) => {
 
     const statusOf = (t) => {
         if (t.task_approval?.director) return 'Approved'
-        if (t.task_approval?.revision_comment) return 'Revision'
+        if (t.task_approval?.revised_at) return 'Revision'
         if (t.task_output?.link) return 'Submitted'
         return 'Pending'
     }
@@ -129,7 +133,7 @@ router.get('/load_all_tasks', async (req, res) => {
     }
 
     // 6. Map rows
-    const mapped = data.map(t => {
+    const mapped = approvedTasks.map(t => {
         const assigneeUnits = userUnitMap[t.assignee] || []
         const resolvedUnitId = assigneeUnits.find(uid =>
             allowedUnitIds.includes(Number(uid))
@@ -182,16 +186,19 @@ router.get('/load_all_tasks', async (req, res) => {
 })
 
 router.get('/load_own_tasks', async (req, res) => {
+    const { dateFrom, dateTo } = req.query
+    
     const { data, error } = await req.supabase
         .from('task')
         .select(`
       id, assignee,
       task_profile ( title, description, task_type_ref:task_type(task_type) ),
-      task_approval ( unit_head, director, revision_comment ),
+      task_approval ( unit_head, director, revised_at ),
       task_duration ( created, deadline ),
       task_output   ( link )
     `)
         .eq('assignee', req.user.id)
+        .order('id')
 
     if (error) {
         console.error('[IndividualAccomplishmentReport] task:', error.message)
@@ -203,7 +210,7 @@ router.get('/load_own_tasks', async (req, res) => {
     if (parentTaskIds.length) {
         const { data: subtasksData, error: subtasksError } = await req.supabase
             .from('subtask')
-            .select('id, parent_task_id, task_profile ( title, description )')
+            .select('id, parent_task_id, task_profile ( title )')
             .in('parent_task_id', parentTaskIds)
             .order('id')
 
@@ -213,15 +220,33 @@ router.get('/load_own_tasks', async (req, res) => {
         }
 
         ; (subtasksData || []).forEach((s) => {
-            const pid = s.parent_id
+            const pid = s.parent_task_id
             if (!pid) return
             if (!subtaskMap[pid]) subtaskMap[pid] = []
             subtaskMap[pid].push(s)
         })
     }
 
+    // Filter by date range if provided
+    let filteredData = data || []
+    if (dateFrom && dateTo) {
+        const from = new Date(dateFrom)
+        const to = new Date(dateTo)
+        to.setHours(23, 59, 59, 999)
+        
+        filteredData = filteredData.filter(t => {
+            const checkDate = (d) => {
+                if (!d) return false
+                const date = new Date(d)
+                if (isNaN(date)) return false
+                return date >= from && date <= to
+            }
+            return checkDate(t.task_duration?.created) || checkDate(t.task_duration?.deadline)
+        })
+    }
+
     return res.status(200).json({
-        data: (data || []).map(t => ({
+        data: filteredData.map(t => ({
             assignee: t.assignee,
             name: t.task_profile?.title || '',
             description: t.task_profile?.description || '',
