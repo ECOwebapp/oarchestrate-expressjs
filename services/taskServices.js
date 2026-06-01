@@ -55,13 +55,19 @@ const formatRow = (
   comments,
   isSubtask = false,
 ) => {
-  const roles = t.assignee_profile?.positions?.map((r) => r.pos_id) || [];
-  const units = t.assignee_profile?.positions?.map((r) => r.unit_id) || [];
+  const roles =
+    t.assignee_profile?.positions
+      ?.filter((r) => r.pos_id !== null)
+      .map((r) => r.pos_id) || [];
+  const units =
+    t.assignee_profile?.positions
+      ?.filter((r) => r.unit_id !== null)
+      .map((r) => r.unit_id) || [];
 
   const preferredUnit =
     activeUnitHeadId && units.includes(activeUnitHeadId)
       ? activeUnitHeadId
-      : (units[0] ?? null);
+      : units[0] || null;
 
   const base = {
     id: t.id,
@@ -150,8 +156,10 @@ export const fetchTasks = async (
   parentId = null,
   insertion = false,
 ) => {
-  const { isDirector, isUnitHead } = await resolvePosUnitIds(supabase, userId);
-  const activeUnitHeadId = isUnitHead?.unit_id || null;
+  const { isDirector, activeUnitId } = await resolvePosUnitIds(
+    supabase,
+    userId,
+  );
 
   let query = supabase.from("task").select(SELECT_QUERY(false));
   if (parentId) query = query.eq("parent_ppa_id", Number(parentId));
@@ -170,9 +178,7 @@ export const fetchTasks = async (
   if (error) throw error;
   if (commentErr) throw commentErr;
 
-  return tasks.map((t) =>
-    formatRow(t, activeUnitHeadId, userId, comments, false),
-  );
+  return tasks.map((t) => formatRow(t, activeUnitId, userId, comments, false));
 };
 
 export const fetchSubtasks = async (
@@ -183,12 +189,11 @@ export const fetchSubtasks = async (
   design = false,
 ) => {
   // 1. Get Requester Metadata
-  const { isDirector, isUnitHead } = await resolvePosUnitIds(
+  const { isDirector, isUnitHead, activeUnitId } = await resolvePosUnitIds(
     supabase,
     userId,
     null,
   );
-  const activeUnitHeadId = isUnitHead?.unit_id || null;
 
   let query = supabase.from("subtask").select(SELECT_QUERY(true));
   if (parentId) query = query.eq("parent_task_id", Number(parentId));
@@ -203,7 +208,7 @@ export const fetchSubtasks = async (
     const { unitMembers } = await resolvePosUnitIds(
       supabase,
       null,
-      activeUnitHeadId,
+      activeUnitId,
     );
     const allowedIds = [
       ...new Set([userId, ...(unitMembers?.map((m) => m.user_id) || [])]),
@@ -248,7 +253,7 @@ export const fetchSubtasks = async (
   // 3. Final Mapping
   // Pass the requester's ID to mapRow to handle 'isOwnTask' logic on the server
   return subtaskRows.map((st) =>
-    formatRow(st, activeUnitHeadId, userId, comments, true),
+    formatRow(st, activeUnitId, userId, comments, true),
   );
 };
 
